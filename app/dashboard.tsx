@@ -1,6 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useEffect, useState } from 'react';
-
 import {
   ActivityIndicator,
   RefreshControl,
@@ -37,21 +36,16 @@ export default function Dashboard() {
 
   const fetchBins = useCallback(async () => {
     try {
-      const {
-        data,
-        error,
-      } = await supabase
+      const { data, error } = await supabase
         .from('bins')
-        .select(
-          'bin_id, name, waste_type, current_level, status, location, updated_at'
-        )
+        .select('*')
         .order('current_level', {
           ascending: false,
         });
 
       if (error) {
         console.error(
-          'Error fetching bins:',
+          'ERROR FETCHING BINS:',
           error.message
         );
 
@@ -59,16 +53,15 @@ export default function Dashboard() {
         return;
       }
 
-      setBins(
-        (data || []).map((bin) => ({
-          ...bin,
-          current_level:
-            Number(bin.current_level) || 0,
-        }))
+      console.log(
+        'BINS FETCHED:',
+        data
       );
+
+      setBins(data || []);
     } catch (error) {
       console.error(
-        'Unexpected fetch error:',
+        'UNEXPECTED FETCH ERROR:',
         error
       );
 
@@ -93,14 +86,79 @@ export default function Dashboard() {
    * =====================================================
    * REALTIME BIN UPDATES
    * =====================================================
+   *
+   * IMPORTANT:
+   * .on('postgres_changes', ...) MUST happen
+   * BEFORE .subscribe().
+   *
+   * We also remove any old channel with the same
+   * topic before creating a new one.
    */
 
   useEffect(() => {
-    const channel = supabase
-      .channel(
-        `dashboard-bins-${Date.now()}`
-      )
-      .on(
+    let cancelled = false;
+
+    const setupRealtime = async () => {
+      const channelName =
+        'omnibin-dashboard-bins';
+
+      console.log(
+        'SETTING UP REALTIME...'
+      );
+
+      /*
+       * -------------------------------------------------
+       * REMOVE OLD CHANNEL
+       * -------------------------------------------------
+       *
+       * This prevents React/Expo from reusing an already
+       * subscribed channel.
+       */
+
+      const existingChannels =
+        supabase.getChannels();
+
+      const existingChannel =
+        existingChannels.find(
+          (channel) =>
+            channel.topic ===
+            `realtime:${channelName}`
+        );
+
+      if (existingChannel) {
+        console.log(
+          'REMOVING OLD REALTIME CHANNEL...'
+        );
+
+        await supabase.removeChannel(
+          existingChannel
+        );
+      }
+
+      if (cancelled) {
+        return;
+      }
+
+      /*
+       * -------------------------------------------------
+       * CREATE NEW CHANNEL
+       * -------------------------------------------------
+       */
+
+      const channel =
+        supabase.channel(
+          channelName
+        );
+
+      /*
+       * -------------------------------------------------
+       * ADD POSTGRES CHANGES LISTENER
+       * -------------------------------------------------
+       *
+       * DO NOT MOVE THIS AFTER subscribe().
+       */
+
+      channel.on(
         'postgres_changes',
         {
           event: 'UPDATE',
@@ -109,22 +167,133 @@ export default function Dashboard() {
         },
         (payload) => {
           console.log(
-            'Dashboard realtime update:',
-            payload
+            '================================='
           );
 
+          console.log(
+            'REALTIME UPDATE RECEIVED'
+          );
+
+          console.log(
+            'OLD DATA:',
+            payload.old
+          );
+
+          console.log(
+            'NEW DATA:',
+            payload.new
+          );
+
+          console.log(
+            '================================='
+          );
+
+          /*
+           * Fetch the newest database values.
+           */
           fetchBins();
         }
-      )
-      .subscribe((status) => {
-        console.log(
-          'Dashboard realtime status:',
-          status
-        );
-      });
+      );
+
+      /*
+       * -------------------------------------------------
+       * SUBSCRIBE
+       * -------------------------------------------------
+       */
+
+      channel.subscribe(
+        (status) => {
+          console.log(
+            'REALTIME STATUS:',
+            status
+          );
+
+          if (
+            status ===
+            'SUBSCRIBED'
+          ) {
+            console.log(
+              'REALTIME CONNECTED SUCCESSFULLY'
+            );
+          }
+
+          if (
+            status ===
+            'CHANNEL_ERROR'
+          ) {
+            console.error(
+              'REALTIME CHANNEL ERROR'
+            );
+          }
+
+          if (
+            status ===
+            'TIMED_OUT'
+          ) {
+            console.error(
+              'REALTIME CONNECTION TIMED OUT'
+            );
+          }
+
+          if (
+            status ===
+            'CLOSED'
+          ) {
+            console.log(
+              'REALTIME CHANNEL CLOSED'
+            );
+          }
+        }
+      );
+
+      /*
+       * -------------------------------------------------
+       * CLEANUP
+       * -------------------------------------------------
+       */
+
+      return channel;
+    };
+
+    let realtimeChannel:
+      ReturnType<
+        typeof supabase.channel
+      > | null = null;
+
+    setupRealtime().then(
+      (channel) => {
+        if (
+          channel &&
+          !cancelled
+        ) {
+          realtimeChannel =
+            channel;
+        } else if (channel) {
+          /*
+           * If the component was already
+           * unmounted while subscribing,
+           * immediately clean up.
+           */
+          supabase.removeChannel(
+            channel
+          );
+        }
+      }
+    );
 
     return () => {
-      supabase.removeChannel(channel);
+      cancelled = true;
+
+      if (realtimeChannel) {
+        console.log(
+          'REMOVING REALTIME CHANNEL...'
+        );
+
+        supabase.removeChannel(
+          realtimeChannel
+        );
+        realtimeChannel = null;
+      }
     };
   }, [fetchBins]);
 
@@ -143,6 +312,12 @@ export default function Dashboard() {
    * =====================================================
    * DETERMINE STATUS
    * =====================================================
+   *
+   * Status is determined from current_level.
+   *
+   * 90-100 = FULL
+   * 50-89  = HALF FULL
+   * 0-49   = AVAILABLE
    */
 
   const getStatus = (
@@ -189,18 +364,29 @@ export default function Dashboard() {
     wasteType: string
   ) => {
     const type =
-      wasteType.toLowerCase().trim();
+      wasteType
+        .toLowerCase()
+        .trim();
 
     if (
-      type === 'biodegradable'
+      type ===
+      'biodegradable'
     ) {
       return 'leaf-outline';
     }
 
     if (
-      type === 'non-biodegradable'
+      type ===
+      'non-biodegradable'
     ) {
       return 'trash-bin-outline';
+    }
+
+    if (
+      type ===
+      'recyclable'
+    ) {
+      return 'recycle-outline';
     }
 
     return 'trash-bin-outline';
@@ -208,13 +394,12 @@ export default function Dashboard() {
 
   /*
    * =====================================================
-   * SCREEN
+   * RENDER
    * =====================================================
    */
 
   return (
     <View style={styles.screen}>
-
       <View style={styles.container}>
 
         <ScrollView
@@ -223,11 +408,17 @@ export default function Dashboard() {
           }
           refreshControl={
             <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
+              refreshing={
+                refreshing
+              }
+              onRefresh={
+                onRefresh
+              }
             />
           }
-          showsVerticalScrollIndicator={false}
+          showsVerticalScrollIndicator={
+            false
+          }
         >
 
           {/* HEADER */}
@@ -239,8 +430,11 @@ export default function Dashboard() {
 
           {/* WELCOME */}
 
-          <View style={styles.welcome}>
-
+          <View
+            style={
+              styles.welcome
+            }
+          >
             <Text
               style={
                 styles.welcomeTitle
@@ -254,38 +448,24 @@ export default function Dashboard() {
                 styles.welcomeText
               }
             >
-              Monitor the current status
-              of all waste bins.
+              Monitor the current
+              status of all waste
+              bins.
             </Text>
-
           </View>
 
           {/* LOADING */}
 
           {loading ? (
-
-            <View
+            <ActivityIndicator
+              size="large"
+              color="#1B5E20"
               style={
-                styles.loadingContainer
+                styles.loading
               }
-            >
-
-              <ActivityIndicator
-                size="large"
-                color="#1B5E20"
-              />
-
-              <Text
-                style={
-                  styles.loadingText
-                }
-              >
-                Loading bins...
-              </Text>
-
-            </View>
-
-          ) : bins.length === 0 ? (
+            />
+          ) : bins.length ===
+            0 ? (
 
             /* EMPTY STATE */
 
@@ -294,19 +474,16 @@ export default function Dashboard() {
                 styles.emptyContainer
               }
             >
-
               <View
                 style={
                   styles.emptyIcon
                 }
               >
-
                 <Ionicons
                   name="trash-outline"
                   size={30}
                   color="#8A8A8A"
                 />
-
               </View>
 
               <Text
@@ -322,10 +499,11 @@ export default function Dashboard() {
                   styles.emptyText
                 }
               >
-                There is currently no waste
-                bin information available.
+                There is currently
+                no waste bin
+                information
+                available.
               </Text>
-
             </View>
 
           ) : (
@@ -333,218 +511,228 @@ export default function Dashboard() {
             /* BIN LIST */
 
             <View>
+              {bins.map(
+                (bin) => {
+                  /*
+                   * IMPORTANT:
+                   * Status comes from
+                   * current_level,
+                   * not the database
+                   * status column.
+                   */
 
-              {bins.map((bin) => {
+                  const status =
+                    getStatus(
+                      bin.current_level
+                    );
 
-                const status =
-                  getStatus(
-                    bin.current_level
-                  );
+                  const statusColor =
+                    getStatusColor(
+                      bin.current_level
+                    );
 
-                const statusColor =
-                  getStatusColor(
-                    bin.current_level
-                  );
-
-                return (
-
-                  <View
-                    key={bin.bin_id}
-                    style={styles.card}
-                  >
-
-                    {/* CARD HEADER */}
-
+                  return (
                     <View
+                      key={
+                        bin.bin_id
+                      }
                       style={
-                        styles.cardHeader
+                        styles.card
                       }
                     >
 
+                      {/* CARD HEADER */}
+
                       <View
                         style={
-                          styles.binTitleContainer
+                          styles.cardHeader
                         }
                       >
-
                         <View
+                          style={
+                            styles.binTitleContainer
+                          }
+                        >
+
+                          {/* WASTE ICON */}
+
+                          <View
+                            style={[
+                              styles.binIcon,
+                              {
+                                backgroundColor:
+                                  bin.current_level >=
+                                  90
+                                    ? '#FFEBEE'
+                                    : '#E8F5E9',
+                              },
+                            ]}
+                          >
+                            <Ionicons
+                              name={
+                                getWasteIcon(
+                                  bin.waste_type
+                                ) as any
+                              }
+                              size={21}
+                              color={
+                                statusColor
+                              }
+                            />
+                          </View>
+
+                          {/* BIN INFORMATION */}
+
+                          <View>
+                            <Text
+                              style={
+                                styles.binName
+                              }
+                            >
+                              {
+                                bin.waste_type
+                              }
+                            </Text>
+
+                            <Text
+                              style={
+                                styles.binIdentifier
+                              }
+                            >
+                              {
+                                bin.name
+                              }
+                            </Text>
+                          </View>
+                        </View>
+
+                        {/* STATUS */}
+
+                        <Text
                           style={[
-                            styles.binIcon,
+                            styles.status,
                             {
-                              backgroundColor:
-                                bin.current_level >=
-                                90
-                                  ? '#FFEBEE'
-                                  : '#E8F5E9',
+                              color:
+                                statusColor,
                             },
                           ]}
                         >
-
-                          <Ionicons
-                            name={
-                              getWasteIcon(
-                                bin.waste_type
-                              ) as any
-                            }
-                            size={21}
-                            color={
-                              statusColor
-                            }
-                          />
-
-                        </View>
-
-                        <View>
-
-                          <Text
-                            style={
-                              styles.binName
-                            }
-                          >
-                            {
-                              bin.waste_type
-                            }
-                          </Text>
-
-                          <Text
-                            style={
-                              styles.binIdentifier
-                            }
-                          >
-                            {bin.name}
-                          </Text>
-
-                        </View>
-
+                          {
+                            status
+                          }
+                        </Text>
                       </View>
 
-                      <Text
-                        style={[
-                          styles.status,
-                          {
-                            color:
-                              statusColor,
-                          },
-                        ]}
-                      >
-                        {status}
-                      </Text>
-
-                    </View>
-
-                    {/* LEVEL */}
-
-                    <View
-                      style={
-                        styles.levelRow
-                      }
-                    >
-
-                      <Text
-                        style={[
-                          styles.level,
-                          {
-                            color:
-                              statusColor,
-                          },
-                        ]}
-                      >
-                        {
-                          bin.current_level
-                        }%
-                      </Text>
-
-                      <Text
-                        style={
-                          styles.capacityText
-                        }
-                      >
-                        Capacity
-                      </Text>
-
-                    </View>
-
-                    {/* PROGRESS BAR */}
-
-                    <View
-                      style={
-                        styles.progressBackground
-                      }
-                    >
+                      {/* LEVEL */}
 
                       <View
-                        style={[
-                          styles.progress,
+                        style={
+                          styles.levelRow
+                        }
+                      >
+                        <Text
+                          style={[
+                            styles.level,
+                            {
+                              color:
+                                statusColor,
+                            },
+                          ]}
+                        >
                           {
-                            width: `${Math.min(
-                              bin.current_level,
-                              100
-                            )}%`,
-                            backgroundColor:
-                              statusColor,
-                          },
-                        ]}
-                      />
+                            bin.current_level
+                          }%
+                        </Text>
 
-                    </View>
+                        <Text
+                          style={
+                            styles.capacityText
+                          }
+                        >
+                          Capacity
+                        </Text>
+                      </View>
 
-                    {/* LOCATION */}
+                      {/* PROGRESS BAR */}
 
-                    <View
-                      style={
-                        styles.infoRow
-                      }
-                    >
-
-                      <Ionicons
-                        name="location-outline"
-                        size={16}
-                        color="#777777"
-                      />
-
-                      <Text
+                      <View
                         style={
-                          styles.location
+                          styles.progressBackground
                         }
                       >
-                        {bin.location}
-                      </Text>
+                        <View
+                          style={[
+                            styles.progress,
+                            {
+                              width: `${Math.min(
+                                Math.max(
+                                  bin.current_level,
+                                  0
+                                ),
+                                100
+                              )}%`,
+                              backgroundColor:
+                                statusColor,
+                            },
+                          ]}
+                        />
+                      </View>
 
-                    </View>
+                      {/* LOCATION */}
 
-                    {/* LAST UPDATED */}
-
-                    <View
-                      style={
-                        styles.infoRow
-                      }
-                    >
-
-                      <Ionicons
-                        name="time-outline"
-                        size={15}
-                        color="#999999"
-                      />
-
-                      <Text
+                      <View
                         style={
-                          styles.updated
+                          styles.infoRow
                         }
                       >
-                        Last updated:{' '}
-                        {bin.updated_at
-                          ? new Date(
-                              bin.updated_at
-                            ).toLocaleString()
-                          : 'N/A'}
-                      </Text>
+                        <Ionicons
+                          name="location-outline"
+                          size={16}
+                          color="#777777"
+                        />
+
+                        <Text
+                          style={
+                            styles.location
+                          }
+                        >
+                          {
+                            bin.location
+                          }
+                        </Text>
+                      </View>
+
+                      {/* LAST UPDATED */}
+
+                      <View
+                        style={
+                          styles.infoRow
+                        }
+                      >
+                        <Ionicons
+                          name="time-outline"
+                          size={15}
+                          color="#999999"
+                        />
+
+                        <Text
+                          style={
+                            styles.updated
+                          }
+                        >
+                          Last updated:{' '}
+                          {bin.updated_at
+                            ? new Date(
+                                bin.updated_at
+                              ).toLocaleString()
+                            : 'N/A'}
+                        </Text>
+                      </View>
 
                     </View>
-
-                  </View>
-                );
-              })}
-
+                  );
+                }
+              )}
             </View>
           )}
 
@@ -555,7 +743,6 @@ export default function Dashboard() {
         <BottomNav />
 
       </View>
-
     </View>
   );
 }
@@ -566,201 +753,185 @@ export default function Dashboard() {
  * =====================================================
  */
 
-const styles = StyleSheet.create({
+const styles =
+  StyleSheet.create({
 
-  screen: {
-    flex: 1,
-    backgroundColor: '#F5F7F5',
-  },
-
-  container: {
-    flex: 1,
-    backgroundColor: '#F5F7F5',
-  },
-
-  content: {
-    paddingBottom: 100,
-  },
-
-  /* WELCOME */
-
-  welcome: {
-    paddingHorizontal: 24,
-    paddingTop: 24,
-    paddingBottom: 12,
-  },
-
-  welcomeTitle: {
-    fontSize: 25,
-    fontWeight: 'bold',
-    color: '#222222',
-  },
-
-  welcomeText: {
-    color: '#666666',
-    marginTop: 5,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-
-  /* LOADING */
-
-  loadingContainer: {
-    alignItems: 'center',
-    paddingTop: 45,
-  },
-
-  loadingText: {
-    marginTop: 12,
-    fontSize: 14,
-    color: '#777777',
-  },
-
-  /* CARD */
-
-  card: {
-    backgroundColor: '#FFFFFF',
-    marginHorizontal: 20,
-    marginVertical: 8,
-    padding: 20,
-    borderRadius: 16,
-
-    shadowColor: '#000',
-
-    shadowOffset: {
-      width: 0,
-      height: 2,
+    screen: {
+      flex: 1,
+      backgroundColor:
+        '#F5F7F5',
     },
 
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
+    container: {
+      flex: 1,
+      backgroundColor:
+        '#F5F7F5',
+    },
 
-    elevation: 2,
-  },
+    content: {
+      paddingBottom: 100,
+    },
 
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
+    welcome: {
+      paddingHorizontal: 24,
+      paddingTop: 24,
+      paddingBottom: 12,
+    },
 
-  binTitleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
+    welcomeTitle: {
+      fontSize: 25,
+      fontWeight: 'bold',
+      color: '#222222',
+    },
 
-  binIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
+    welcomeText: {
+      color: '#666666',
+      marginTop: 5,
+      fontSize: 14,
+      lineHeight: 20,
+    },
 
-  binName: {
-    fontSize: 17,
-    fontWeight: 'bold',
-    color: '#222222',
-  },
+    loading: {
+      marginTop: 45,
+    },
 
-  binIdentifier: {
-    fontSize: 12,
-    color: '#888888',
-    marginTop: 2,
-  },
+    card: {
+      backgroundColor: '#FFFFFF',
+      marginHorizontal: 20,
+      marginVertical: 8,
+      padding: 20,
+      borderRadius: 16,
 
-  status: {
-    fontSize: 11,
-    fontWeight: 'bold',
-  },
+      shadowColor: '#000',
+      shadowOffset: {
+        width: 0,
+        height: 2,
+      },
+      shadowOpacity: 0.05,
+      shadowRadius: 4,
 
-  /* LEVEL */
+      elevation: 2,
+    },
 
-  levelRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    marginTop: 15,
-  },
+    cardHeader: {
+      flexDirection: 'row',
+      justifyContent:
+        'space-between',
+      alignItems: 'center',
+    },
 
-  level: {
-    fontSize: 32,
-    fontWeight: 'bold',
-  },
+    binTitleContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      flex: 1,
+    },
 
-  capacityText: {
-    fontSize: 12,
-    color: '#999999',
-    marginLeft: 7,
-  },
+    binIcon: {
+      width: 42,
+      height: 42,
+      borderRadius: 21,
+      alignItems: 'center',
+      justifyContent:
+        'center',
+      marginRight: 12,
+    },
 
-  /* PROGRESS */
+    binName: {
+      fontSize: 17,
+      fontWeight: 'bold',
+      color: '#222222',
+    },
 
-  progressBackground: {
-    height: 10,
-    backgroundColor: '#E5E5E5',
-    borderRadius: 10,
-    marginTop: 10,
-    overflow: 'hidden',
-  },
+    binIdentifier: {
+      fontSize: 12,
+      color: '#888888',
+      marginTop: 2,
+    },
 
-  progress: {
-    height: '100%',
-    borderRadius: 10,
-  },
+    status: {
+      fontSize: 11,
+      fontWeight: 'bold',
+    },
 
-  /* INFORMATION */
+    levelRow: {
+      flexDirection: 'row',
+      alignItems: 'baseline',
+      marginTop: 15,
+    },
 
-  infoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 12,
-  },
+    level: {
+      fontSize: 32,
+      fontWeight: 'bold',
+    },
 
-  location: {
-    color: '#666666',
-    fontSize: 13,
-    marginLeft: 6,
-  },
+    capacityText: {
+      fontSize: 12,
+      color: '#999999',
+      marginLeft: 7,
+    },
 
-  updated: {
-    color: '#999999',
-    fontSize: 11,
-    marginLeft: 6,
-  },
+    progressBackground: {
+      height: 10,
+      backgroundColor: '#E5E5E5',
+      borderRadius: 10,
+      marginTop: 10,
+      overflow: 'hidden',
+    },
 
-  /* EMPTY */
+    progress: {
+      height: '100%',
+      borderRadius: 10,
+    },
 
-  emptyContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 30,
-    paddingTop: 75,
-  },
+    infoRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginTop: 12,
+    },
 
-  emptyIcon: {
-    width: 65,
-    height: 65,
-    borderRadius: 33,
-    backgroundColor: '#E8ECE8',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 15,
-  },
+    location: {
+      color: '#666666',
+      fontSize: 13,
+      marginLeft: 6,
+    },
 
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333333',
-  },
+    updated: {
+      color: '#999999',
+      fontSize: 11,
+      marginLeft: 6,
+    },
 
-  emptyText: {
-    fontSize: 14,
-    color: '#888888',
-    textAlign: 'center',
-    marginTop: 8,
-    lineHeight: 20,
-  },
+    emptyContainer: {
+      alignItems: 'center',
+      justifyContent:
+        'center',
+      paddingHorizontal: 30,
+      paddingTop: 75,
+    },
 
-});
+    emptyIcon: {
+      width: 65,
+      height: 65,
+      borderRadius: 33,
+      backgroundColor:
+        '#E8ECE8',
+      alignItems: 'center',
+      justifyContent:
+        'center',
+      marginBottom: 15,
+    },
+
+    emptyTitle: {
+      fontSize: 20,
+      fontWeight: 'bold',
+      color: '#333333',
+    },
+
+    emptyText: {
+      fontSize: 14,
+      color: '#888888',
+      textAlign: 'center',
+      marginTop: 8,
+      lineHeight: 20,
+    },
+  });

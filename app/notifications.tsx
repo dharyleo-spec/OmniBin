@@ -1,6 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useState,
+} from 'react';
 
 import {
   ActivityIndicator,
@@ -13,6 +17,7 @@ import {
 } from 'react-native';
 
 import BottomNav from '../components/BottomNav';
+import Header from '../components/Header';
 import { supabase } from '../lib/supabase';
 
 type Notification = {
@@ -38,72 +43,94 @@ type NotificationWithBin = {
   bin: Bin;
 };
 
-type IoniconName = keyof typeof Ionicons.glyphMap;
+type IoniconName =
+  keyof typeof Ionicons.glyphMap;
 
 export default function Notifications() {
-  const [notifications, setNotifications] = useState<
+  const [
+    notifications,
+    setNotifications,
+  ] = useState<
     NotificationWithBin[]
   >([]);
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] =
+    useState(true);
 
-  const [selectedNotification, setSelectedNotification] =
-    useState<NotificationWithBin | null>(null);
+  const [
+    selectedNotification,
+    setSelectedNotification,
+  ] =
+    useState<NotificationWithBin | null>(
+      null
+    );
 
-  // ==================================================
-  // WASTE TYPE ICON
-  // ==================================================
+  /*
+   * =====================================================
+   * WASTE TYPE ICON
+   * =====================================================
+   */
 
   const getWasteIcon = (
     wasteType: string
   ): IoniconName => {
-    const type = wasteType.toLowerCase().trim();
 
-    if (type === 'biodegradable') {
+    const type =
+      wasteType.toLowerCase().trim();
+
+    if (
+      type === 'biodegradable'
+    ) {
       return 'leaf-outline';
     }
 
-    if (type === 'non-biodegradable') {
+    if (
+      type === 'non-biodegradable'
+    ) {
       return 'trash-bin-outline';
     }
 
     return 'trash-bin-outline';
   };
 
-  // ==================================================
-  // WASTE TYPE ICON COLOR
-  // ==================================================
+  /*
+   * =====================================================
+   * WASTE TYPE ICON COLOR
+   * =====================================================
+   */
 
   const getWasteIconColor = (
     wasteType: string
   ) => {
-    const type = wasteType.toLowerCase().trim();
 
-    if (type === 'biodegradable') {
+    const type =
+      wasteType.toLowerCase().trim();
+
+    if (
+      type === 'biodegradable'
+    ) {
       return '#537B2F';
     }
 
-    if (type === 'non-biodegradable') {
+    if (
+      type === 'non-biodegradable'
+    ) {
       return '#777777';
     }
 
     return '#537B2F';
   };
 
-  // ==================================================
-  // FETCH NOTIFICATIONS
-  // ==================================================
+  /*
+   * =====================================================
+   * FETCH NOTIFICATIONS
+   * =====================================================
+   */
 
-  const fetchNotifications = useCallback(
-    async () => {
+  const fetchNotifications =
+    useCallback(async () => {
+
       try {
-        console.log(
-          'Fetching notifications...'
-        );
-
-        /*
-         * Get all notification records.
-         */
 
         const {
           data: notificationData,
@@ -113,48 +140,45 @@ export default function Notifications() {
           .select(
             'notif_id, bin_id, message, is_read, created_at'
           )
-          .order('created_at', {
-            ascending: false,
-          });
+          .order(
+            'created_at',
+            {
+              ascending: false,
+            }
+          );
 
         if (notificationError) {
+
           console.error(
             'Error fetching notifications:',
             notificationError.message
           );
 
           setNotifications([]);
+
           return;
         }
-
-        /*
-         * No notifications.
-         */
 
         if (
           !notificationData ||
           notificationData.length === 0
         ) {
-          console.log(
-            'No notification records found.'
-          );
 
           setNotifications([]);
+
           return;
         }
 
-        const validNotifications: NotificationWithBin[] =
-          [];
-
-        /*
-         * Check every notification.
-         */
+        const validNotifications:
+          NotificationWithBin[] = [];
 
         for (
-          const notification of notificationData
+          const notification
+          of notificationData
         ) {
+
           /*
-           * Only collection notifications.
+           * Only collection notifications
            */
 
           if (
@@ -163,10 +187,6 @@ export default function Notifications() {
           ) {
             continue;
           }
-
-          /*
-           * Get the current bin information.
-           */
 
           const {
             data: binData,
@@ -186,274 +206,200 @@ export default function Notifications() {
             binError ||
             !binData
           ) {
-            console.error(
-              `Could not find bin ${notification.bin_id}:`,
-              binError?.message
-            );
-
             continue;
           }
 
           /*
-           * Only show notifications when
-           * the bin is currently at 90% or higher.
+           * Only display when
+           * bin is 90% or higher.
            */
 
-          const currentLevel =
+          if (
             Number(
               binData.current_level
-            );
-
-          if (
-            currentLevel < 90
+            ) < 90
           ) {
             continue;
           }
-
-          /*
-           * Add valid notification.
-           */
 
           validNotifications.push({
             notification,
             bin: {
               ...binData,
               current_level:
-                currentLevel,
+                Number(
+                  binData.current_level
+                ) || 0,
             },
           });
         }
 
-        console.log(
-          'Valid notifications:',
-          validNotifications.length
-        );
-
         setNotifications(
           validNotifications
         );
+
       } catch (error) {
+
         console.error(
           'Unexpected notification error:',
           error
         );
 
         setNotifications([]);
-      } finally {
-        setLoading(false);
-      }
-    },
-    []
-  );
 
-  // ==================================================
-  // FETCH WHEN SCREEN IS OPENED
-  // ==================================================
+      } finally {
+
+        setLoading(false);
+
+      }
+
+    }, []);
+
+  /*
+   * =====================================================
+   * FETCH WHEN SCREEN IS OPENED
+   * =====================================================
+   */
 
   useFocusEffect(
     useCallback(() => {
-      console.log(
-        'Notifications screen focused.'
-      );
 
       setLoading(true);
 
       fetchNotifications();
+
     }, [fetchNotifications])
   );
 
-  // ==================================================
-  // REALTIME
-  // ==================================================
-  //
-  // IMPORTANT:
-  //
-  // INSERT:
-  // Detects a NEW notification created by
-  // the database trigger.
-  //
-  // UPDATE:
-  // Detects when a notification is marked
-  // as read.
-  //
-  // BINS UPDATE:
-  // Detects when current_level changes.
-  //
-  // ==================================================
+  /*
+   * =====================================================
+   * REALTIME NOTIFICATION UPDATES
+   * =====================================================
+   */
 
   useEffect(() => {
-    /*
-     * Use a unique channel name.
-     *
-     * This prevents conflicts with other
-     * realtime channels that may still exist
-     * during Expo Fast Refresh.
-     */
 
-    const channelName =
-      `omnibin-notifications-${Date.now()}`;
+    const channel =
+      supabase
+        .channel(
+          `notifications-${Date.now()}`
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'notification',
+          },
+          (payload) => {
 
-    console.log(
-      'Creating realtime channel:',
-      channelName
-    );
+            console.log(
+              'Notification realtime update:',
+              payload
+            );
 
-    const channel = supabase
-      .channel(channelName)
+            fetchNotifications();
 
-      // ----------------------------------------------
-      // NEW NOTIFICATION
-      // ----------------------------------------------
+          }
+        )
+        .subscribe(
+          (status) => {
 
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'notification',
-        },
-        (payload) => {
-          console.log(
-            'NEW NOTIFICATION REALTIME:',
-            payload
-          );
+            console.log(
+              'Notifications realtime status:',
+              status
+            );
 
-          fetchNotifications();
-        }
-      )
-
-      // ----------------------------------------------
-      // NOTIFICATION UPDATED
-      // ----------------------------------------------
-
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'notification',
-        },
-        (payload) => {
-          console.log(
-            'NOTIFICATION UPDATE REALTIME:',
-            payload
-          );
-
-          fetchNotifications();
-        }
-      )
-
-      // ----------------------------------------------
-      // BIN UPDATED
-      // ----------------------------------------------
-
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'bins',
-        },
-        (payload) => {
-          console.log(
-            'BIN UPDATE REALTIME:',
-            payload
-          );
-
-          /*
-           * Re-fetch notifications because the
-           * notification screen checks the CURRENT
-           * bin level.
-           */
-
-          fetchNotifications();
-        }
-      )
-
-      // ----------------------------------------------
-      // SUBSCRIBE
-      // ----------------------------------------------
-
-      .subscribe((status) => {
-        console.log(
-          'Notifications realtime status:',
-          status
+          }
         );
 
-        if (
-          status ===
-          'SUBSCRIBED'
-        ) {
-          console.log(
-            'Notifications realtime connected.'
-          );
-        }
-
-        if (
-          status ===
-          'CHANNEL_ERROR'
-        ) {
-          console.error(
-            'Notifications realtime channel error.'
-          );
-        }
-
-        if (
-          status ===
-          'TIMED_OUT'
-        ) {
-          console.error(
-            'Notifications realtime timed out.'
-          );
-        }
-
-        if (
-          status ===
-          'CLOSED'
-        ) {
-          console.log(
-            'Notifications realtime channel closed.'
-          );
-        }
-      });
-
-    // ----------------------------------------------
-    // CLEANUP
-    // ----------------------------------------------
-
     return () => {
-      console.log(
-        'Removing notifications realtime channel.'
-      );
 
       supabase.removeChannel(
         channel
       );
+
     };
+
   }, [fetchNotifications]);
 
-  // ==================================================
-  // OPEN NOTIFICATION
-  // ==================================================
+  /*
+   * =====================================================
+   * ALSO LISTEN FOR BIN CHANGES
+   * =====================================================
+   *
+   * This is important because the notification
+   * screen hides notifications whenever the current
+   * bin level goes below 90%.
+   *
+   * Therefore, changing the bin level must also
+   * refresh this screen.
+   */
+
+  useEffect(() => {
+
+    const channel =
+      supabase
+        .channel(
+          `notification-bins-${Date.now()}`
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'bins',
+          },
+          (payload) => {
+
+            console.log(
+              'Notification bin update:',
+              payload
+            );
+
+            fetchNotifications();
+
+          }
+        )
+        .subscribe(
+          (status) => {
+
+            console.log(
+              'Notification bin realtime status:',
+              status
+            );
+
+          }
+        );
+
+    return () => {
+
+      supabase.removeChannel(
+        channel
+      );
+
+    };
+
+  }, [fetchNotifications]);
+
+  /*
+   * =====================================================
+   * OPEN NOTIFICATION
+   * =====================================================
+   */
 
   const openNotification = async (
     item: NotificationWithBin
   ) => {
-    /*
-     * Open modal immediately.
-     */
 
     setSelectedNotification(
       item
     );
 
-    /*
-     * Mark as read.
-     */
-
     if (
       !item.notification.is_read
     ) {
+
       const {
         error,
       } = await supabase
@@ -463,107 +409,78 @@ export default function Notifications() {
         })
         .eq(
           'notif_id',
-          item.notification.notif_id
+          item.notification
+            .notif_id
         );
 
       if (error) {
+
         console.error(
           'Error marking notification as read:',
           error.message
         );
 
-        return;
+      } else {
+
+        setNotifications(
+          (current) =>
+            current.map(
+              (
+                notificationItem
+              ) =>
+                notificationItem
+                  .notification
+                  .notif_id ===
+                item.notification
+                  .notif_id
+                  ? {
+                      ...notificationItem,
+
+                      notification: {
+                        ...notificationItem.notification,
+
+                        is_read: true,
+                      },
+                    }
+                  : notificationItem
+            )
+        );
+
       }
-
-      /*
-       * Update local state immediately.
-       */
-
-      setNotifications(
-        (current) =>
-          current.map(
-            (
-              notificationItem
-            ) =>
-              notificationItem
-                .notification
-                .notif_id ===
-              item.notification
-                .notif_id
-                ? {
-                    ...notificationItem,
-
-                    notification: {
-                      ...notificationItem.notification,
-                      is_read: true,
-                    },
-                  }
-                : notificationItem
-          )
-      );
-
-      /*
-       * Also update the modal.
-       */
-
-      setSelectedNotification(
-        (current) =>
-          current
-            ? {
-                ...current,
-
-                notification: {
-                  ...current.notification,
-                  is_read: true,
-                },
-              }
-            : null
-      );
     }
   };
 
-  // ==================================================
-  // CLOSE MODAL
-  // ==================================================
+  /*
+   * =====================================================
+   * CLOSE MODAL
+   * =====================================================
+   */
 
   const closeModal = () => {
+
     setSelectedNotification(
       null
     );
+
   };
 
-  // ==================================================
-  // UI
-  // ==================================================
+  /*
+   * =====================================================
+   * UI
+   * =====================================================
+   */
 
   return (
-    <View
-      style={styles.container}
-    >
+    <View style={styles.container}>
 
-      {/* ==========================================
-          HEADER
-          ========================================== */}
+      {/* HEADER */}
 
-      <View
-        style={styles.header}
-      >
-        <Text
-          style={styles.headerTitle}
-        >
-          Notifications
-        </Text>
+      <Header
+        title="Notifications"
+        subtitle="Bin collection alerts"
+      />
 
-        <Text
-          style={styles.headerSubtitle}
-        >
-          Bin collection alerts
-        </Text>
-      </View>
-
-      {/* ==========================================
-          NOTIFICATION LIST
-          ========================================== */}
+      {/* NOTIFICATION LIST */}
 
       <ScrollView
         style={styles.scrollView}
@@ -575,8 +492,6 @@ export default function Notifications() {
         }
       >
 
-        {/* LOADING */}
-
         {loading ? (
 
           <View
@@ -584,6 +499,7 @@ export default function Notifications() {
               styles.loadingContainer
             }
           >
+
             <ActivityIndicator
               size="large"
               color="#537B2F"
@@ -596,11 +512,12 @@ export default function Notifications() {
             >
               Loading notifications...
             </Text>
+
           </View>
 
         ) : notifications.length === 0 ? (
 
-          /* EMPTY */
+          /* EMPTY STATE */
 
           <View
             style={
@@ -613,11 +530,13 @@ export default function Notifications() {
                 styles.emptyIconContainer
               }
             >
+
               <Ionicons
                 name="checkmark-circle-outline"
                 size={42}
                 color="#537B2F"
               />
+
             </View>
 
             <Text
@@ -633,7 +552,8 @@ export default function Notifications() {
                 styles.emptyText
               }
             >
-              There are no bins requiring collection.
+              There are no bins requiring
+              collection.
             </Text>
 
           </View>
@@ -649,22 +569,19 @@ export default function Notifications() {
                 item.bin;
 
               return (
+
                 <Pressable
                   key={
-                    item
-                      .notification
+                    item.notification
                       .notif_id
                   }
-
                   style={[
                     styles.notificationCard,
 
-                    !item
-                      .notification
+                    !item.notification
                       .is_read &&
                       styles.unreadCard,
                   ]}
-
                   onPress={() =>
                     openNotification(
                       item
@@ -679,11 +596,13 @@ export default function Notifications() {
                       styles.alertIconContainer
                     }
                   >
+
                     <Ionicons
                       name="alert"
                       size={24}
                       color="#C62828"
                     />
+
                   </View>
 
                   {/* CONTENT */}
@@ -727,41 +646,30 @@ export default function Notifications() {
                       }
                     >
                       {new Date(
-                        item
-                          .notification
+                        item.notification
                           .created_at
                       ).toLocaleString()}
                     </Text>
 
                   </View>
 
-                  {/* UNREAD DOT */}
-
-                  {!item
-                    .notification
-                    .is_read && (
-                    <View
-                      style={
-                        styles.unreadDot
-                      }
-                    />
-                  )}
-
                 </Pressable>
               );
             }
           )
+
         )}
 
       </ScrollView>
 
-      {/* ==========================================
+      {/* =================================================
           BIN INFORMATION MODAL
-          ========================================== */}
+          ================================================= */}
 
       <Modal
         visible={
-          selectedNotification !== null
+          selectedNotification !==
+          null
         }
         transparent
         animationType="fade"
@@ -802,28 +710,23 @@ export default function Notifications() {
                             selectedNotification
                               .bin
                               .waste_type
-                          ) +
-                          '18',
+                          ) + '18',
                       },
                     ]}
                   >
 
                     <Ionicons
-                      name={
-                        getWasteIcon(
-                          selectedNotification
-                            .bin
-                            .waste_type
-                        )
-                      }
+                      name={getWasteIcon(
+                        selectedNotification
+                          .bin
+                          .waste_type
+                      )}
                       size={28}
-                      color={
-                        getWasteIconColor(
-                          selectedNotification
-                            .bin
-                            .waste_type
-                        )
-                      }
+                      color={getWasteIconColor(
+                        selectedNotification
+                          .bin
+                          .waste_type
+                      )}
                     />
 
                   </View>
@@ -1024,9 +927,7 @@ export default function Notifications() {
 
       </Modal>
 
-      {/* ==========================================
-          BOTTOM NAVIGATION
-          ========================================== */}
+      {/* BOTTOM NAVIGATION */}
 
       <BottomNav />
 
@@ -1040,41 +941,12 @@ export default function Notifications() {
 
 const styles = StyleSheet.create({
 
-  // ==================================================
-  // CONTAINER
-  // ==================================================
-
   container: {
     flex: 1,
     backgroundColor: '#F5F5F5',
   },
 
-  // ==================================================
-  // HEADER
-  // ==================================================
-
-  header: {
-    backgroundColor: '#073B12',
-    paddingTop: 70,
-    paddingBottom: 28,
-    paddingHorizontal: 26,
-  },
-
-  headerTitle: {
-    fontSize: 34,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-
-  headerSubtitle: {
-    fontSize: 16,
-    color: '#B8C9BA',
-    marginTop: 4,
-  },
-
-  // ==================================================
-  // SCROLL VIEW
-  // ==================================================
+  /* SCROLL VIEW */
 
   scrollView: {
     flex: 1,
@@ -1085,9 +957,7 @@ const styles = StyleSheet.create({
     paddingBottom: 110,
   },
 
-  // ==================================================
-  // NOTIFICATION CARD
-  // ==================================================
+  /* NOTIFICATION CARD */
 
   notificationCard: {
     backgroundColor: '#FFFFFF',
@@ -1096,7 +966,6 @@ const styles = StyleSheet.create({
     marginBottom: 14,
     flexDirection: 'row',
     alignItems: 'flex-start',
-    position: 'relative',
 
     shadowColor: '#000',
 
@@ -1154,23 +1023,7 @@ const styles = StyleSheet.create({
     color: '#888888',
   },
 
-  // ==================================================
-  // UNREAD DOT
-  // ==================================================
-
-  unreadDot: {
-    position: 'absolute',
-    top: 18,
-    right: 18,
-    width: 9,
-    height: 9,
-    borderRadius: 5,
-    backgroundColor: '#C62828',
-  },
-
-  // ==================================================
-  // LOADING
-  // ==================================================
+  /* LOADING */
 
   loadingContainer: {
     alignItems: 'center',
@@ -1184,9 +1037,7 @@ const styles = StyleSheet.create({
     color: '#777777',
   },
 
-  // ==================================================
-  // EMPTY STATE
-  // ==================================================
+  /* EMPTY */
 
   emptyContainer: {
     alignItems: 'center',
@@ -1219,9 +1070,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 
-  // ==================================================
-  // MODAL
-  // ==================================================
+  /* MODAL */
 
   modalOverlay: {
     flex: 1,
@@ -1252,10 +1101,6 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
 
-  // ==================================================
-  // MODAL HEADER
-  // ==================================================
-
   modalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1281,9 +1126,7 @@ const styles = StyleSheet.create({
     color: '#222222',
   },
 
-  // ==================================================
-  // INFORMATION ROWS
-  // ==================================================
+  /* INFORMATION */
 
   infoRow: {
     paddingVertical: 13,
@@ -1312,9 +1155,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  // ==================================================
-  // CLOSE BUTTON
-  // ==================================================
+  /* CLOSE */
 
   closeButton: {
     height: 50,
@@ -1330,4 +1171,5 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#444444',
   },
+
 });

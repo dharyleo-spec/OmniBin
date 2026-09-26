@@ -1,93 +1,142 @@
-import * as Notifications from 'expo-notifications';
-import { Stack, router, usePathname } from 'expo-router';
+import { Stack, router, useSegments } from 'expo-router';
 import { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  StyleSheet,
+  View,
+} from 'react-native';
 
-import { registerForPushNotifications } from '../lib/notifications';
 import { supabase } from '../lib/supabase';
 
 export default function RootLayout() {
-  const pathname = usePathname();
+  const segments = useSegments();
 
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   /*
    * =====================================================
-   * AUTHENTICATION
+   * AUTHENTICATION INITIALIZATION
    * =====================================================
    */
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setLoading(false);
-    });
+    let mounted = true;
+
+    const getSession = async () => {
+      try {
+        const {
+          data,
+          error,
+        } = await supabase.auth.getSession();
+
+        if (error) {
+          console.error(
+            'AUTH SESSION ERROR:',
+            error.message
+          );
+
+          if (mounted) {
+            setSession(null);
+          }
+
+          return;
+        }
+
+        if (mounted) {
+          setSession(data.session);
+        }
+
+      } catch (error) {
+
+        console.error(
+          'AUTH INITIALIZATION ERROR:',
+          error
+        );
+
+        if (mounted) {
+          setSession(null);
+        }
+
+      } finally {
+
+        if (mounted) {
+          setLoading(false);
+        }
+
+      }
+    };
+
+    getSession();
+
+    /*
+     * ===================================================
+     * AUTH STATE LISTENER
+     * ===================================================
+     */
 
     const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(
-      (_event, newSession) => {
-        setSession(newSession);
-        setLoading(false);
-      }
-    );
+      data: {
+        subscription,
+      },
+    } =
+      supabase.auth.onAuthStateChange(
+        (event, newSession) => {
+
+          console.log(
+            'AUTH EVENT:',
+            event
+          );
+
+          if (!mounted) {
+            return;
+          }
+
+          setSession(newSession);
+
+          /*
+           * USER LOGGED OUT
+           */
+
+          if (
+            event === 'SIGNED_OUT'
+          ) {
+            router.replace(
+              '/(tabs)'
+            );
+
+            return;
+          }
+
+          /*
+           * USER LOGGED IN
+           */
+
+          if (
+            event === 'SIGNED_IN' &&
+            newSession
+          ) {
+            router.replace(
+              '/dashboard'
+            );
+
+            return;
+          }
+
+        }
+      );
+
+    /*
+     * ===================================================
+     * CLEANUP
+     * ===================================================
+     */
 
     return () => {
+      mounted = false;
       subscription.unsubscribe();
     };
-  }, []);
 
-  /*
-   * =====================================================
-   * PUSH NOTIFICATION REGISTRATION
-   * =====================================================
-   *
-   * Only register the device when a user
-   * is logged in.
-   */
-
-  useEffect(() => {
-    if (!session) {
-      return;
-    }
-
-    registerForPushNotifications();
-  }, [session]);
-
-  /*
-   * =====================================================
-   * PUSH NOTIFICATION LISTENERS
-   * =====================================================
-   *
-   * Handles notifications while the app is open
-   * and when the user taps a notification.
-   */
-
-  useEffect(() => {
-    const notificationListener =
-      Notifications.addNotificationReceivedListener(
-        (notification) => {
-          console.log(
-            'Push notification received:',
-            notification
-          );
-        }
-      );
-
-    const responseListener =
-      Notifications.addNotificationResponseReceivedListener(
-        (response) => {
-          console.log(
-            'Push notification opened:',
-            response
-          );
-        }
-      );
-
-    return () => {
-      notificationListener.remove();
-      responseListener.remove();
-    };
   }, []);
 
   /*
@@ -97,41 +146,82 @@ export default function RootLayout() {
    */
 
   useEffect(() => {
+
     if (loading) {
       return;
     }
 
+    const firstSegment =
+      segments[0];
+
     const isLoginPage =
-      pathname === '/' ||
-      pathname === '/(tabs)' ||
-      pathname === '/(tabs)/';
+      firstSegment === '(tabs)';
 
-    const isProtectedPage =
-      pathname === '/dashboard' ||
-      pathname === '/notifications' ||
-      pathname === '/profile';
+    const isRegisterPage =
+      firstSegment === 'Register';
 
-    if (!session && isProtectedPage) {
-      router.replace('/(tabs)');
+    const isAuthPage =
+      isLoginPage ||
+      isRegisterPage;
+
+    /*
+     * NO SESSION
+     *
+     * Send user to login.
+     */
+
+    if (
+      !session &&
+      !isAuthPage
+    ) {
+      router.replace(
+        '/(tabs)'
+      );
+
+      return;
     }
 
-    if (session && isLoginPage) {
-      router.replace('/dashboard');
+    /*
+     * SESSION EXISTS
+     *
+     * Prevent logged-in users from
+     * remaining on login/register.
+     */
+
+    if (
+      session &&
+      isAuthPage
+    ) {
+      router.replace(
+        '/dashboard'
+      );
     }
+
   }, [
     session,
     loading,
-    pathname,
+    segments,
   ]);
 
   /*
    * =====================================================
-   * LOADING
+   * INITIAL LOADING
    * =====================================================
    */
 
   if (loading) {
-    return null;
+    return (
+      <View
+        style={
+          styles.loadingScreen
+        }
+      >
+        <ActivityIndicator
+          size="large"
+          color="#1B5E20"
+        />
+      </View>
+    );
   }
 
   /*
@@ -147,37 +237,53 @@ export default function RootLayout() {
         animation: 'none',
       }}
     >
+
+      {/* LOGIN */}
+
       <Stack.Screen
         name="(tabs)"
-        options={{
-          headerShown: false,
-          animation: 'none',
-        }}
       />
+
+      {/* REGISTER */}
+
+      <Stack.Screen
+        name="Register"
+      />
+
+      {/* DASHBOARD */}
 
       <Stack.Screen
         name="dashboard"
-        options={{
-          headerShown: false,
-          animation: 'none',
-        }}
       />
+
+      {/* NOTIFICATIONS */}
 
       <Stack.Screen
         name="notifications"
-        options={{
-          headerShown: false,
-          animation: 'none',
-        }}
       />
+
+      {/* PROFILE */}
 
       <Stack.Screen
         name="profile"
-        options={{
-          headerShown: false,
-          animation: 'none',
-        }}
       />
+
     </Stack>
   );
 }
+
+/*
+ * =====================================================
+ * STYLES
+ * =====================================================
+ */
+
+const styles = StyleSheet.create({
+  loadingScreen: {
+    flex: 1,
+    backgroundColor: '#F5F7F5',
+
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});

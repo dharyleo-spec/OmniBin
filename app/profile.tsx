@@ -15,21 +15,53 @@ import BottomNav from '../components/BottomNav';
 import { supabase } from '../lib/supabase';
 
 export default function Profile() {
-  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [showLogoutModal, setShowLogoutModal] =
+    useState(false);
+
   const [email, setEmail] = useState('');
+  const [displayName, setDisplayName] =
+    useState('');
+
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getUserEmail();
+    getUserProfile();
   }, []);
 
-  const getUserEmail = async () => {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+  const getUserProfile = async () => {
+    try {
+      const {
+        data: { user },
+        error,
+      } = await supabase.auth.getUser();
 
-    if (user) {
-      setEmail(user.email ?? '');
+      if (error) {
+        console.log(
+          'Profile error:',
+          error.message
+        );
+
+        setLoading(false);
+        return;
+      }
+
+      if (user) {
+        // EMAIL
+        setEmail(user.email ?? '');
+
+        // DISPLAY NAME
+        const name =
+          user.user_metadata?.display_name;
+
+        setDisplayName(
+          name || 'Personnel'
+        );
+      }
+    } catch (error) {
+      console.log(
+        'Profile loading error:',
+        error
+      );
     }
 
     setLoading(false);
@@ -38,12 +70,16 @@ export default function Profile() {
   const handleLogout = async () => {
     setShowLogoutModal(false);
 
-    const { error } = await supabase.auth.signOut({
-      scope: 'local',
-    });
+    const { error } =
+      await supabase.auth.signOut({
+        scope: 'local',
+      });
 
     if (error) {
-      console.log('Logout error:', error.message);
+      console.log(
+        'Logout error:',
+        error.message
+      );
       return;
     }
 
@@ -53,12 +89,15 @@ export default function Profile() {
   return (
     <View style={styles.screen}>
       <View style={styles.container}>
+
         <ScrollView
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
         >
-          {/* Profile Header */}
+
+          {/* PROFILE HEADER */}
           <View style={styles.header}>
+
             <View style={styles.profileIcon}>
               <Ionicons
                 name="person"
@@ -68,9 +107,22 @@ export default function Profile() {
             </View>
 
             <View style={styles.profileInfo}>
-              <Text style={styles.name}>
-                Personnel
-              </Text>
+
+              {loading ? (
+                <ActivityIndicator
+                  size="small"
+                  color="#DDEBDD"
+                  style={styles.nameLoader}
+                />
+              ) : (
+                <Text
+                  style={styles.name}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
+                  {displayName}
+                </Text>
+              )}
 
               {loading ? (
                 <ActivityIndicator
@@ -87,18 +139,23 @@ export default function Profile() {
                   {email || 'No email available'}
                 </Text>
               )}
+
             </View>
+
           </View>
 
-          {/* Access Information */}
+          {/* ACCESS INFORMATION */}
           <View style={styles.section}>
+
             <Text style={styles.sectionTitle}>
               Access Information
             </Text>
 
             <View style={styles.card}>
-              {/* Access Level */}
+
+              {/* ACCESS LEVEL */}
               <View style={styles.infoRow}>
+
                 <View style={styles.iconBox}>
                   <Ionicons
                     name="shield-checkmark-outline"
@@ -108,6 +165,7 @@ export default function Profile() {
                 </View>
 
                 <View style={styles.infoText}>
+
                   <Text style={styles.label}>
                     Access Level
                   </Text>
@@ -115,13 +173,16 @@ export default function Profile() {
                   <Text style={styles.value}>
                     Authorized Personnel
                   </Text>
+
                 </View>
+
               </View>
 
               <View style={styles.divider} />
 
-              {/* Access Place */}
+              {/* ACCESS PLACE */}
               <View style={styles.infoRow}>
+
                 <View style={styles.iconBox}>
                   <Ionicons
                     name="location-outline"
@@ -131,6 +192,7 @@ export default function Profile() {
                 </View>
 
                 <View style={styles.infoText}>
+
                   <Text style={styles.label}>
                     Access Place
                   </Text>
@@ -138,20 +200,27 @@ export default function Profile() {
                   <Text style={styles.value}>
                     CLIRDEC Building
                   </Text>
+
                 </View>
+
               </View>
+
             </View>
+
           </View>
 
-          {/* System Information */}
+          {/* SYSTEM INFORMATION */}
           <View style={styles.section}>
+
             <Text style={styles.sectionTitle}>
               System Information
             </Text>
 
             <View style={styles.card}>
-              {/* System */}
+
+              {/* SYSTEM */}
               <View style={styles.infoRow}>
+
                 <View style={styles.iconBox}>
                   <Ionicons
                     name="trash-outline"
@@ -161,6 +230,7 @@ export default function Profile() {
                 </View>
 
                 <View style={styles.infoText}>
+
                   <Text style={styles.label}>
                     System
                   </Text>
@@ -168,13 +238,16 @@ export default function Profile() {
                   <Text style={styles.value}>
                     OmniBin Waste Management System
                   </Text>
+
                 </View>
+
               </View>
 
               <View style={styles.divider} />
 
-              {/* Application */}
+              {/* APPLICATION */}
               <View style={styles.infoRow}>
+
                 <View style={styles.iconBox}>
                   <Ionicons
                     name="phone-portrait-outline"
@@ -184,6 +257,7 @@ export default function Profile() {
                 </View>
 
                 <View style={styles.infoText}>
+
                   <Text style={styles.label}>
                     Application
                   </Text>
@@ -191,13 +265,16 @@ export default function Profile() {
                   <Text style={styles.value}>
                     OmniBin
                   </Text>
+
                 </View>
+
               </View>
 
               <View style={styles.divider} />
 
-              {/* Version */}
+              {/* VERSION */}
               <View style={styles.infoRow}>
+
                 <View style={styles.iconBox}>
                   <Ionicons
                     name="information-circle-outline"
@@ -207,6 +284,7 @@ export default function Profile() {
                 </View>
 
                 <View style={styles.infoText}>
+
                   <Text style={styles.label}>
                     Version
                   </Text>
@@ -214,16 +292,23 @@ export default function Profile() {
                   <Text style={styles.value}>
                     1.0.0
                   </Text>
+
                 </View>
+
               </View>
+
             </View>
+
           </View>
 
-          {/* Logout */}
+          {/* LOGOUT */}
           <Pressable
             style={styles.logoutButton}
-            onPress={() => setShowLogoutModal(true)}
+            onPress={() =>
+              setShowLogoutModal(true)
+            }
           >
+
             <Ionicons
               name="log-out-outline"
               size={21}
@@ -233,13 +318,16 @@ export default function Profile() {
             <Text style={styles.logoutText}>
               Log Out
             </Text>
+
           </Pressable>
+
         </ScrollView>
 
         <BottomNav />
+
       </View>
 
-      {/* Logout Modal */}
+      {/* LOGOUT MODAL */}
       <Modal
         visible={showLogoutModal}
         transparent
@@ -248,8 +336,11 @@ export default function Profile() {
           setShowLogoutModal(false)
         }
       >
+
         <View style={styles.modalOverlay}>
+
           <View style={styles.modalCard}>
+
             <View style={styles.modalIcon}>
               <Ionicons
                 name="log-out-outline"
@@ -267,6 +358,7 @@ export default function Profile() {
             </Text>
 
             <View style={styles.modalButtons}>
+
               <Pressable
                 style={styles.cancelButton}
                 onPress={() =>
@@ -286,15 +378,21 @@ export default function Profile() {
                   Log Out
                 </Text>
               </Pressable>
+
             </View>
+
           </View>
+
         </View>
+
       </Modal>
+
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+
   screen: {
     flex: 1,
     backgroundColor: '#F5F7F5',
@@ -309,7 +407,8 @@ const styles = StyleSheet.create({
     paddingBottom: 25,
   },
 
-  /* Profile Header */
+  /* PROFILE HEADER */
+
   header: {
     backgroundColor: '#1B5E20',
     paddingTop: 55,
@@ -342,6 +441,10 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 
+  nameLoader: {
+    alignSelf: 'flex-start',
+  },
+
   email: {
     color: '#DDEBDD',
     fontSize: 14,
@@ -353,7 +456,8 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
 
-  /* Sections */
+  /* SECTIONS */
+
   section: {
     marginTop: 22,
   },
@@ -366,7 +470,8 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
 
-  /* Cards */
+  /* CARDS */
+
   card: {
     backgroundColor: '#FFFFFF',
     marginHorizontal: 20,
@@ -424,7 +529,8 @@ const styles = StyleSheet.create({
     marginVertical: 15,
   },
 
-  /* Logout */
+  /* LOGOUT */
+
   logoutButton: {
     marginHorizontal: 20,
     marginTop: 25,
@@ -460,7 +566,8 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
 
-  /* Logout Modal */
+  /* LOGOUT MODAL */
+
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.45)',
@@ -549,4 +656,5 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: 'bold',
   },
+
 });

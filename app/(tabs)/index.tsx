@@ -50,7 +50,10 @@ export default function HomeScreen() {
         return;
       }
 
-      console.log('LOGIN SUCCESS:', data.user?.email);
+      console.log(
+        'LOGIN SUCCESS:',
+        data.user?.email
+      );
 
       setLoading(false);
 
@@ -75,6 +78,7 @@ export default function HomeScreen() {
 
         {/* LOGO / TITLE */}
         <View style={styles.logoContainer}>
+
           <View style={styles.logoCircle}>
             <Text style={styles.logoText}>
               O
@@ -88,10 +92,12 @@ export default function HomeScreen() {
           <Text style={styles.subtitle}>
             Smart Waste Management System
           </Text>
+
         </View>
 
         {/* EMAIL */}
         <View style={styles.inputContainer}>
+
           <Text style={styles.inputLabel}>
             Email
           </Text>
@@ -109,10 +115,12 @@ export default function HomeScreen() {
             keyboardType="email-address"
             editable={!loading}
           />
+
         </View>
 
         {/* PASSWORD */}
         <View style={styles.inputContainer}>
+
           <Text style={styles.inputLabel}>
             Password
           </Text>
@@ -130,6 +138,7 @@ export default function HomeScreen() {
             autoCapitalize="none"
             editable={!loading}
           />
+
         </View>
 
         {/* ERROR MESSAGE */}
@@ -163,6 +172,25 @@ export default function HomeScreen() {
           )}
         </TouchableOpacity>
 
+        {/* REGISTER */}
+        <View style={styles.registerContainer}>
+
+          <Text style={styles.registerText}>
+            Don't have an account?
+          </Text>
+
+          <TouchableOpacity
+            onPress={() => router.push('/Register')}
+            disabled={loading}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.registerLink}>
+              Register
+            </Text>
+          </TouchableOpacity>
+
+        </View>
+
         {/* FOOTER */}
         <Text style={styles.footerText}>
           Authorized personnel only
@@ -175,6 +203,11 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
+
+  // --------------------------------------------------
+  // SCREEN
+  // --------------------------------------------------
+
   screen: {
     flex: 1,
     backgroundColor: '#F5F7F5',
@@ -184,6 +217,10 @@ const styles = StyleSheet.create({
 
     paddingHorizontal: 20,
   },
+
+  // --------------------------------------------------
+  // LOGIN CARD
+  // --------------------------------------------------
 
   loginCard: {
     width: '100%',
@@ -206,6 +243,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 8,
   },
+
+  // --------------------------------------------------
+  // LOGO
+  // --------------------------------------------------
 
   logoContainer: {
     alignItems: 'center',
@@ -241,9 +282,15 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 13,
     color: '#777777',
+
     marginTop: 5,
+
     textAlign: 'center',
   },
+
+  // --------------------------------------------------
+  // INPUTS
+  // --------------------------------------------------
 
   inputContainer: {
     marginBottom: 18,
@@ -252,7 +299,9 @@ const styles = StyleSheet.create({
   inputLabel: {
     fontSize: 14,
     fontWeight: '600',
+
     color: '#333333',
+
     marginBottom: 7,
   },
 
@@ -272,7 +321,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#FAFCFA',
   },
 
-  /* ERROR */
+  // --------------------------------------------------
+  // ERROR
+  // --------------------------------------------------
+
   errorBox: {
     backgroundColor: '#FDECEC',
 
@@ -289,11 +341,16 @@ const styles = StyleSheet.create({
 
   errorText: {
     color: '#C62828',
+
     fontSize: 13,
+
     fontWeight: '500',
   },
 
-  /* LOGIN BUTTON */
+  // --------------------------------------------------
+  // LOGIN BUTTON
+  // --------------------------------------------------
+
   loginButton: {
     height: 52,
 
@@ -313,9 +370,45 @@ const styles = StyleSheet.create({
 
   loginButtonText: {
     color: '#FFFFFF',
+
     fontSize: 16,
+
     fontWeight: 'bold',
   },
+
+  // --------------------------------------------------
+  // REGISTER
+  // --------------------------------------------------
+
+  registerContainer: {
+    flexDirection: 'row',
+
+    justifyContent: 'center',
+
+    alignItems: 'center',
+
+    marginTop: 18,
+  },
+
+  registerText: {
+    fontSize: 13,
+
+    color: '#777777',
+  },
+
+  registerLink: {
+    fontSize: 13,
+
+    fontWeight: '700',
+
+    color: '#1B5E20',
+
+    marginLeft: 5,
+  },
+
+  // --------------------------------------------------
+  // FOOTER
+  // --------------------------------------------------
 
   footerText: {
     textAlign: 'center',
@@ -326,4 +419,5 @@ const styles = StyleSheet.create({
 
     marginTop: 20,
   },
+
 });
