@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useEffect, useState } from 'react';
+
 import {
   ActivityIndicator,
   RefreshControl,
@@ -10,6 +11,7 @@ import {
 } from 'react-native';
 
 import BottomNav from '../components/BottomNav';
+import Header from '../components/Header';
 import { supabase } from '../lib/supabase';
 
 type Bin = {
@@ -21,8 +23,6 @@ type Bin = {
   location: string;
   updated_at: string;
 };
-
-type IoniconName = keyof typeof Ionicons.glyphMap;
 
 export default function Dashboard() {
   const [bins, setBins] = useState<Bin[]>([]);
@@ -36,8 +36,6 @@ export default function Dashboard() {
    */
 
   const fetchBins = useCallback(async () => {
-    console.log('Fetching bins...');
-
     try {
       const {
         data,
@@ -61,11 +59,6 @@ export default function Dashboard() {
         return;
       }
 
-      console.log(
-        'Bins loaded:',
-        data
-      );
-
       setBins(
         (data || []).map((bin) => ({
           ...bin,
@@ -88,7 +81,7 @@ export default function Dashboard() {
 
   /*
    * =====================================================
-   * INITIAL LOAD
+   * INITIAL DATA FETCH
    * =====================================================
    */
 
@@ -100,16 +93,9 @@ export default function Dashboard() {
    * =====================================================
    * REALTIME BIN UPDATES
    * =====================================================
-   *
-   * IMPORTANT:
-   * This channel is ONLY for Dashboard.
    */
 
   useEffect(() => {
-    console.log(
-      'Starting Dashboard realtime...'
-    );
-
     const channel = supabase
       .channel(
         `dashboard-bins-${Date.now()}`
@@ -127,61 +113,20 @@ export default function Dashboard() {
             payload
           );
 
-          const updatedBin =
-            payload.new as Partial<Bin>;
-
-          if (
-            updatedBin.bin_id ===
-            undefined
-          ) {
-            return;
-          }
-
-          setBins((currentBins) => {
-            const newBins =
-              currentBins.map((bin) => {
-                if (
-                  bin.bin_id !==
-                  updatedBin.bin_id
-                ) {
-                  return bin;
-                }
-
-                return {
-                  ...bin,
-                  ...updatedBin,
-                  current_level:
-                    Number(
-                      updatedBin.current_level ??
-                        bin.current_level
-                    ),
-                };
-              });
-
-            return [...newBins].sort(
-              (a, b) =>
-                Number(b.current_level) -
-                Number(a.current_level)
-            );
-          });
+          fetchBins();
         }
-      );
-
-    channel.subscribe((status) => {
-      console.log(
-        'Dashboard realtime status:',
-        status
-      );
-    });
+      )
+      .subscribe((status) => {
+        console.log(
+          'Dashboard realtime status:',
+          status
+        );
+      });
 
     return () => {
-      console.log(
-        'Stopping Dashboard realtime...'
-      );
-
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [fetchBins]);
 
   /*
    * =====================================================
@@ -196,7 +141,7 @@ export default function Dashboard() {
 
   /*
    * =====================================================
-   * STATUS
+   * DETERMINE STATUS
    * =====================================================
    */
 
@@ -216,7 +161,7 @@ export default function Dashboard() {
 
   /*
    * =====================================================
-   * STATUS COLOR
+   * DETERMINE STATUS COLOR
    * =====================================================
    */
 
@@ -236,17 +181,15 @@ export default function Dashboard() {
 
   /*
    * =====================================================
-   * WASTE ICON
+   * DETERMINE WASTE ICON
    * =====================================================
    */
 
   const getWasteIcon = (
     wasteType: string
-  ): IoniconName => {
+  ) => {
     const type =
-      wasteType
-        .toLowerCase()
-        .trim();
+      wasteType.toLowerCase().trim();
 
     if (
       type === 'biodegradable'
@@ -271,6 +214,7 @@ export default function Dashboard() {
 
   return (
     <View style={styles.screen}>
+
       <View style={styles.container}>
 
         <ScrollView
@@ -283,26 +227,20 @@ export default function Dashboard() {
               onRefresh={onRefresh}
             />
           }
-          showsVerticalScrollIndicator={
-            false
-          }
+          showsVerticalScrollIndicator={false}
         >
 
           {/* HEADER */}
 
-          <View style={styles.header}>
-            <Text style={styles.title}>
-              OmniBin
-            </Text>
-
-            <Text style={styles.subtitle}>
-              Smart Waste Management System
-            </Text>
-          </View>
+          <Header
+            title="OmniBin"
+            subtitle="Smart Waste Management System"
+          />
 
           {/* WELCOME */}
 
           <View style={styles.welcome}>
+
             <Text
               style={
                 styles.welcomeTitle
@@ -319,16 +257,19 @@ export default function Dashboard() {
               Monitor the current status
               of all waste bins.
             </Text>
+
           </View>
 
           {/* LOADING */}
 
           {loading ? (
+
             <View
               style={
                 styles.loadingContainer
               }
             >
+
               <ActivityIndicator
                 size="large"
                 color="#1B5E20"
@@ -341,25 +282,31 @@ export default function Dashboard() {
               >
                 Loading bins...
               </Text>
+
             </View>
 
           ) : bins.length === 0 ? (
 
-            /* EMPTY */
+            /* EMPTY STATE */
 
             <View
               style={
                 styles.emptyContainer
               }
             >
+
               <View
-                style={styles.emptyIcon}
+                style={
+                  styles.emptyIcon
+                }
               >
+
                 <Ionicons
                   name="trash-outline"
                   size={30}
                   color="#8A8A8A"
                 />
+
               </View>
 
               <Text
@@ -378,26 +325,29 @@ export default function Dashboard() {
                 There is currently no waste
                 bin information available.
               </Text>
+
             </View>
 
           ) : (
 
-            /* BINS */
+            /* BIN LIST */
 
             <View>
+
               {bins.map((bin) => {
-                const level =
-                  Number(
-                    bin.current_level
-                  ) || 0;
 
                 const status =
-                  getStatus(level);
+                  getStatus(
+                    bin.current_level
+                  );
 
                 const statusColor =
-                  getStatusColor(level);
+                  getStatusColor(
+                    bin.current_level
+                  );
 
                 return (
+
                   <View
                     key={bin.bin_id}
                     style={styles.card}
@@ -422,26 +372,30 @@ export default function Dashboard() {
                             styles.binIcon,
                             {
                               backgroundColor:
-                                level >= 90
+                                bin.current_level >=
+                                90
                                   ? '#FFEBEE'
                                   : '#E8F5E9',
                             },
                           ]}
                         >
+
                           <Ionicons
                             name={
                               getWasteIcon(
                                 bin.waste_type
-                              )
+                              ) as any
                             }
                             size={21}
                             color={
                               statusColor
                             }
                           />
+
                         </View>
 
                         <View>
+
                           <Text
                             style={
                               styles.binName
@@ -459,6 +413,7 @@ export default function Dashboard() {
                           >
                             {bin.name}
                           </Text>
+
                         </View>
 
                       </View>
@@ -484,6 +439,7 @@ export default function Dashboard() {
                         styles.levelRow
                       }
                     >
+
                       <Text
                         style={[
                           styles.level,
@@ -493,7 +449,9 @@ export default function Dashboard() {
                           },
                         ]}
                       >
-                        {level}%
+                        {
+                          bin.current_level
+                        }%
                       </Text>
 
                       <Text
@@ -503,21 +461,23 @@ export default function Dashboard() {
                       >
                         Capacity
                       </Text>
+
                     </View>
 
-                    {/* PROGRESS */}
+                    {/* PROGRESS BAR */}
 
                     <View
                       style={
                         styles.progressBackground
                       }
                     >
+
                       <View
                         style={[
                           styles.progress,
                           {
                             width: `${Math.min(
-                              level,
+                              bin.current_level,
                               100
                             )}%`,
                             backgroundColor:
@@ -525,6 +485,7 @@ export default function Dashboard() {
                           },
                         ]}
                       />
+
                     </View>
 
                     {/* LOCATION */}
@@ -534,6 +495,7 @@ export default function Dashboard() {
                         styles.infoRow
                       }
                     >
+
                       <Ionicons
                         name="location-outline"
                         size={16}
@@ -547,15 +509,17 @@ export default function Dashboard() {
                       >
                         {bin.location}
                       </Text>
+
                     </View>
 
-                    {/* UPDATED */}
+                    {/* LAST UPDATED */}
 
                     <View
                       style={
                         styles.infoRow
                       }
                     >
+
                       <Ionicons
                         name="time-outline"
                         size={15}
@@ -574,19 +538,24 @@ export default function Dashboard() {
                             ).toLocaleString()
                           : 'N/A'}
                       </Text>
+
                     </View>
 
                   </View>
                 );
               })}
+
             </View>
           )}
 
         </ScrollView>
 
+        {/* BOTTOM NAVIGATION */}
+
         <BottomNav />
 
       </View>
+
     </View>
   );
 }
@@ -598,6 +567,7 @@ export default function Dashboard() {
  */
 
 const styles = StyleSheet.create({
+
   screen: {
     flex: 1,
     backgroundColor: '#F5F7F5',
@@ -612,24 +582,7 @@ const styles = StyleSheet.create({
     paddingBottom: 100,
   },
 
-  header: {
-    backgroundColor: '#1B5E20',
-    paddingTop: 60,
-    paddingBottom: 25,
-    paddingHorizontal: 24,
-  },
-
-  title: {
-    color: '#FFFFFF',
-    fontSize: 30,
-    fontWeight: 'bold',
-  },
-
-  subtitle: {
-    color: '#DDEBDD',
-    fontSize: 14,
-    marginTop: 4,
-  },
+  /* WELCOME */
 
   welcome: {
     paddingHorizontal: 24,
@@ -650,10 +603,11 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 
+  /* LOADING */
+
   loadingContainer: {
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: 60,
+    paddingTop: 45,
   },
 
   loadingText: {
@@ -661,6 +615,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#777777',
   },
+
+  /* CARD */
 
   card: {
     backgroundColor: '#FFFFFF',
@@ -670,10 +626,12 @@ const styles = StyleSheet.create({
     borderRadius: 16,
 
     shadowColor: '#000',
+
     shadowOffset: {
       width: 0,
       height: 2,
     },
+
     shadowOpacity: 0.05,
     shadowRadius: 4,
 
@@ -718,6 +676,8 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 
+  /* LEVEL */
+
   levelRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
@@ -735,6 +695,8 @@ const styles = StyleSheet.create({
     marginLeft: 7,
   },
 
+  /* PROGRESS */
+
   progressBackground: {
     height: 10,
     backgroundColor: '#E5E5E5',
@@ -747,6 +709,8 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: 10,
   },
+
+  /* INFORMATION */
 
   infoRow: {
     flexDirection: 'row',
@@ -765,6 +729,8 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginLeft: 6,
   },
+
+  /* EMPTY */
 
   emptyContainer: {
     alignItems: 'center',
@@ -796,4 +762,5 @@ const styles = StyleSheet.create({
     marginTop: 8,
     lineHeight: 20,
   },
+
 });
