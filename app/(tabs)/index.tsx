@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import { useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   StyleSheet,
   Text,
   TextInput,
@@ -19,7 +20,6 @@ export default function HomeScreen() {
   const [errorMessage, setErrorMessage] = useState('');
 
   const handleLogin = async () => {
-    // Clear previous error
     setErrorMessage('');
 
     // Check empty fields
@@ -40,7 +40,10 @@ export default function HomeScreen() {
         });
 
       if (error) {
-        console.log('LOGIN ERROR:', error.message);
+        console.log(
+          'LOGIN ERROR:',
+          error.message
+        );
 
         setErrorMessage(
           'Invalid email or password.'
@@ -60,7 +63,10 @@ export default function HomeScreen() {
       router.replace('/dashboard');
 
     } catch (error) {
-      console.error('LOGIN ERROR:', error);
+      console.error(
+        'LOGIN ERROR:',
+        error
+      );
 
       setErrorMessage(
         'Something went wrong. Please try again.'
@@ -76,18 +82,20 @@ export default function HomeScreen() {
       {/* LOGIN CARD */}
       <View style={styles.loginCard}>
 
-        {/* LOGO / TITLE */}
+        {/* LOGO / NAMEPLATE */}
         <View style={styles.logoContainer}>
 
-          <View style={styles.logoCircle}>
-            <Text style={styles.logoText}>
-              O
-            </Text>
-          </View>
+          <Image
+            source={require('../../assets/omnibin-logo.png')}
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
 
-          <Text style={styles.title}>
-            OmniBin
-          </Text>
+          <Image
+            source={require('../../assets/omnibin-nameplate.png')}
+            style={styles.nameplateImage}
+            resizeMode="contain"
+          />
 
           <Text style={styles.subtitle}>
             Smart Waste Management System
@@ -154,12 +162,14 @@ export default function HomeScreen() {
         <TouchableOpacity
           style={[
             styles.loginButton,
-            loading && styles.loginButtonDisabled,
+            loading &&
+              styles.loginButtonDisabled,
           ]}
           onPress={handleLogin}
           disabled={loading}
           activeOpacity={0.8}
         >
+
           {loading ? (
             <ActivityIndicator
               size="small"
@@ -170,6 +180,7 @@ export default function HomeScreen() {
               Log In
             </Text>
           )}
+
         </TouchableOpacity>
 
         {/* REGISTER */}
@@ -180,13 +191,17 @@ export default function HomeScreen() {
           </Text>
 
           <TouchableOpacity
-            onPress={() => router.push('/Register')}
+            onPress={() =>
+              router.push('/Register')
+            }
             disabled={loading}
             activeOpacity={0.7}
           >
+
             <Text style={styles.registerLink}>
               Register
             </Text>
+
           </TouchableOpacity>
 
         </View>
@@ -253,37 +268,25 @@ const styles = StyleSheet.create({
     marginBottom: 30,
   },
 
-  logoCircle: {
-    width: 75,
-    height: 75,
+  logoImage: {
+    width: 90,
+    height: 90,
 
-    borderRadius: 38,
-
-    backgroundColor: '#1B5E20',
-
-    alignItems: 'center',
-    justifyContent: 'center',
-
-    marginBottom: 15,
+    marginBottom: 8,
   },
 
-  logoText: {
-    color: '#FFFFFF',
-    fontSize: 36,
-    fontWeight: 'bold',
-  },
+  nameplateImage: {
+    width: 220,
+    height: 60,
 
-  title: {
-    fontSize: 30,
-    fontWeight: 'bold',
-    color: '#1B5E20',
+    marginBottom: 3,
   },
 
   subtitle: {
     fontSize: 13,
     color: '#777777',
 
-    marginTop: 5,
+    marginTop: 3,
 
     textAlign: 'center',
   },

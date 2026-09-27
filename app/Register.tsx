@@ -1,25 +1,38 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
 import {
-    ActivityIndicator,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Image,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 
 import { supabase } from '../lib/supabase';
 
 export default function Register() {
-  const [displayName, setDisplayName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [displayName, setDisplayName] =
+    useState('');
 
-  const [loading, setLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
-  const [successMessage, setSuccessMessage] = useState('');
+  const [email, setEmail] =
+    useState('');
+
+  const [password, setPassword] =
+    useState('');
+
+  const [confirmPassword, setConfirmPassword] =
+    useState('');
+
+  const [loading, setLoading] =
+    useState(false);
+
+  const [errorMessage, setErrorMessage] =
+    useState('');
+
+  const [successMessage, setSuccessMessage] =
+    useState('');
 
   const handleRegister = async () => {
     setErrorMessage('');
@@ -35,6 +48,7 @@ export default function Register() {
       setErrorMessage(
         'Please complete all fields.'
       );
+
       return;
     }
 
@@ -43,6 +57,7 @@ export default function Register() {
       setErrorMessage(
         'Passwords do not match.'
       );
+
       return;
     }
 
@@ -51,6 +66,7 @@ export default function Register() {
       setErrorMessage(
         'Password must be at least 6 characters.'
       );
+
       return;
     }
 
@@ -62,10 +78,10 @@ export default function Register() {
           email: email.trim(),
           password: password,
 
-          // SAVE DISPLAY NAME
           options: {
             data: {
-              display_name: displayName.trim(),
+              display_name:
+                displayName.trim(),
             },
           },
         });
@@ -76,8 +92,12 @@ export default function Register() {
           error.message
         );
 
-        setErrorMessage(error.message);
+        setErrorMessage(
+          error.message
+        );
+
         setLoading(false);
+
         return;
       }
 
@@ -119,11 +139,19 @@ export default function Register() {
         {/* HEADER */}
         <View style={styles.headerContainer}>
 
-          <View style={styles.logoCircle}>
-            <Text style={styles.logoText}>
-              O
-            </Text>
-          </View>
+          {/* LOGO */}
+          <Image
+            source={require('../assets/omnibin-logo.png')}
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
+
+          {/* NAMEPLATE */}
+          <Image
+            source={require('../assets/omnibin-nameplate.png')}
+            style={styles.nameplateImage}
+            resizeMode="contain"
+          />
 
           <Text style={styles.title}>
             Create Account
@@ -229,18 +257,22 @@ export default function Register() {
         {/* ERROR */}
         {errorMessage ? (
           <View style={styles.errorBox}>
+
             <Text style={styles.errorText}>
               {errorMessage}
             </Text>
+
           </View>
         ) : null}
 
         {/* SUCCESS */}
         {successMessage ? (
           <View style={styles.successBox}>
+
             <Text style={styles.successText}>
               {successMessage}
             </Text>
+
           </View>
         ) : null}
 
@@ -255,16 +287,22 @@ export default function Register() {
           disabled={loading}
           activeOpacity={0.8}
         >
+
           {loading ? (
             <ActivityIndicator
               size="small"
               color="#FFFFFF"
             />
           ) : (
-            <Text style={styles.registerButtonText}>
+            <Text
+              style={
+                styles.registerButtonText
+              }
+            >
               Register
             </Text>
           )}
+
         </TouchableOpacity>
 
         {/* BACK TO LOGIN */}
@@ -280,9 +318,11 @@ export default function Register() {
             }
             disabled={loading}
           >
+
             <Text style={styles.loginLink}>
               Log In
             </Text>
+
           </TouchableOpacity>
 
         </View>
@@ -295,66 +335,95 @@ export default function Register() {
 
 const styles = StyleSheet.create({
 
+  // --------------------------------------------------
+  // SCREEN
+  // --------------------------------------------------
+
   screen: {
     flex: 1,
+
     backgroundColor: '#F5F7F5',
+
     alignItems: 'center',
     justifyContent: 'center',
+
     paddingHorizontal: 20,
   },
+
+  // --------------------------------------------------
+  // REGISTER CARD
+  // --------------------------------------------------
 
   registerCard: {
     width: '100%',
     maxWidth: 450,
+
     backgroundColor: '#FFFFFF',
+
     borderRadius: 20,
+
     paddingHorizontal: 28,
     paddingVertical: 35,
 
     elevation: 4,
 
     shadowColor: '#000',
+
     shadowOffset: {
       width: 0,
       height: 3,
     },
+
     shadowOpacity: 0.08,
+
     shadowRadius: 8,
   },
 
+  // --------------------------------------------------
+  // HEADER
+  // --------------------------------------------------
+
   headerContainer: {
     alignItems: 'center',
+
     marginBottom: 30,
   },
 
-  logoCircle: {
-    width: 75,
-    height: 75,
-    borderRadius: 38,
-    backgroundColor: '#1B5E20',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 15,
+  logoImage: {
+    width: 80,
+    height: 80,
+
+    marginBottom: 8,
   },
 
-  logoText: {
-    color: '#FFFFFF',
-    fontSize: 36,
-    fontWeight: 'bold',
+  nameplateImage: {
+    width: 210,
+    height: 55,
+
+    marginBottom: 12,
   },
 
   title: {
     fontSize: 28,
+
     fontWeight: 'bold',
+
     color: '#1B5E20',
   },
 
   subtitle: {
     fontSize: 13,
+
     color: '#777777',
+
     marginTop: 5,
+
     textAlign: 'center',
   },
+
+  // --------------------------------------------------
+  // INPUTS
+  // --------------------------------------------------
 
   inputContainer: {
     marginBottom: 18,
@@ -362,60 +431,103 @@ const styles = StyleSheet.create({
 
   inputLabel: {
     fontSize: 14,
+
     fontWeight: '600',
+
     color: '#333333',
+
     marginBottom: 7,
   },
 
   input: {
     height: 50,
+
     borderWidth: 1,
+
     borderColor: '#D6DDD6',
+
     borderRadius: 10,
+
     paddingHorizontal: 15,
+
     fontSize: 14,
+
     color: '#222222',
+
     backgroundColor: '#FAFCFA',
   },
 
+  // --------------------------------------------------
+  // ERROR
+  // --------------------------------------------------
+
   errorBox: {
     backgroundColor: '#FDECEC',
+
     borderWidth: 1,
+
     borderColor: '#F5B5B5',
+
     borderRadius: 8,
+
     paddingVertical: 10,
+
     paddingHorizontal: 12,
+
     marginBottom: 15,
   },
 
   errorText: {
     color: '#C62828',
+
     fontSize: 13,
+
     fontWeight: '500',
   },
 
+  // --------------------------------------------------
+  // SUCCESS
+  // --------------------------------------------------
+
   successBox: {
     backgroundColor: '#EAF5E7',
+
     borderWidth: 1,
+
     borderColor: '#B8D9AE',
+
     borderRadius: 8,
+
     paddingVertical: 10,
+
     paddingHorizontal: 12,
+
     marginBottom: 15,
   },
 
   successText: {
     color: '#2E6B25',
+
     fontSize: 13,
+
     fontWeight: '500',
   },
 
+  // --------------------------------------------------
+  // REGISTER BUTTON
+  // --------------------------------------------------
+
   registerButton: {
     height: 52,
+
     backgroundColor: '#1B5E20',
+
     borderRadius: 10,
+
     alignItems: 'center',
+
     justifyContent: 'center',
+
     marginTop: 5,
   },
 
@@ -425,26 +537,39 @@ const styles = StyleSheet.create({
 
   registerButtonText: {
     color: '#FFFFFF',
+
     fontSize: 16,
+
     fontWeight: 'bold',
   },
 
+  // --------------------------------------------------
+  // LOGIN
+  // --------------------------------------------------
+
   loginContainer: {
     flexDirection: 'row',
+
     justifyContent: 'center',
+
     alignItems: 'center',
+
     marginTop: 20,
   },
 
   loginText: {
     fontSize: 13,
+
     color: '#777777',
   },
 
   loginLink: {
     fontSize: 13,
+
     fontWeight: '700',
+
     color: '#1B5E20',
+
     marginLeft: 5,
   },
 
