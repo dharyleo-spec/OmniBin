@@ -1,6 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Notifications from 'expo-notifications';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 
 import {
   ActivityIndicator,
@@ -13,6 +18,11 @@ import {
 
 import BottomNav from '../components/BottomNav';
 import Header from '../components/Header';
+
+import {
+  registerForPushNotifications,
+} from '../lib/notifications';
+
 import { supabase } from '../lib/supabase';
 
 /*
@@ -51,23 +61,52 @@ type Bin = {
   updated_at: string;
 };
 
+/*
+ * =====================================================
+ * DASHBOARD
+ * =====================================================
+ */
+
 export default function Dashboard() {
-  const [bins, setBins] = useState<Bin[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+
+  const [bins, setBins] =
+    useState<Bin[]>([]);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [refreshing, setRefreshing] =
+    useState(false);
 
   /*
    * =====================================================
    * TRACK NOTIFIED BINS
    * =====================================================
    *
-   * Prevents the same bin from repeatedly generating
-   * a notification while it remains at 90% or higher.
+   * Prevents repeated notifications while a bin
+   * remains at 90% or higher.
+   *
+   * =====================================================
    */
 
-  const notifiedBins = useRef<
-    Record<number, boolean>
-  >({});
+  const notifiedBins =
+    useRef<Record<number, boolean>>({});
+
+  /*
+   * =====================================================
+   * REGISTER PUSH NOTIFICATIONS
+   * =====================================================
+   */
+
+  useEffect(() => {
+
+    console.log(
+      'STARTING PUSH NOTIFICATION REGISTRATION...'
+    );
+
+    registerForPushNotifications();
+
+  }, []);
 
   /*
    * =====================================================
@@ -75,42 +114,94 @@ export default function Dashboard() {
    * =====================================================
    */
 
-  const sendBinNotification = useCallback(
-    async (bin: Bin) => {
-      try {
-        await Notifications.scheduleNotificationAsync({
-          content: {
-            title: 'OmniBin Alert',
+  const sendBinNotification =
+    useCallback(
+      async (bin: Bin) => {
 
-            body:
-              `${bin.waste_type} bin has reached ` +
-              `${bin.current_level}%. Please collect bin now.`,
+        try {
 
-            sound: 'omnibin_alert.wav',
+          console.log(
+            '================================='
+          );
 
-            data: {
-              bin_id: bin.bin_id,
-              waste_type: bin.waste_type,
-              level: bin.current_level,
+          console.log(
+            'SENDING BIN NOTIFICATION'
+          );
+
+          console.log(
+            'BIN:',
+            bin.name
+          );
+
+          console.log(
+            'LEVEL:',
+            bin.current_level
+          );
+
+          /*
+           * ---------------------------------------------
+           * CREATE LOCAL ANDROID NOTIFICATION
+           * ---------------------------------------------
+           */
+
+          await Notifications.scheduleNotificationAsync({
+
+            content: {
+
+              title:
+                'OmniBin Alert',
+
+              body:
+                `${bin.waste_type} bin has reached ` +
+                `${bin.current_level}%. ` +
+                `Please collect bin now.`,
+
+              sound:
+                'omnibin_alert',
+
+              data: {
+
+                bin_id:
+                  bin.bin_id,
+
+                waste_type:
+                  bin.waste_type,
+
+                level:
+                  bin.current_level,
+              },
+
             },
-          },
 
-          trigger: null,
-        });
+            /*
+             * null = send immediately
+             */
 
-        console.log(
-          'BIN NOTIFICATION SENT:',
-          bin.name
-        );
-      } catch (error) {
-        console.error(
-          'NOTIFICATION ERROR:',
-          error
-        );
-      }
-    },
-    []
-  );
+            trigger: null,
+
+          });
+
+          console.log(
+            'BIN NOTIFICATION SENT:',
+            bin.name
+          );
+
+          console.log(
+            '================================='
+          );
+
+        } catch (error) {
+
+          console.error(
+            'NOTIFICATION ERROR:',
+            error
+          );
+
+        }
+      },
+
+      []
+    );
 
   /*
    * =====================================================
@@ -118,42 +209,102 @@ export default function Dashboard() {
    * =====================================================
    */
 
-  const checkBinNotification = useCallback(
-    (bin: Bin) => {
-      /*
-       * BIN REACHED 90%
-       */
+  const checkBinNotification =
+    useCallback(
+      (bin: Bin) => {
 
-      if (bin.current_level >= 90) {
+        console.log(
+          'CHECKING BIN NOTIFICATION:',
+          bin.name,
+          bin.current_level
+        );
+
         /*
-         * Only send once while the bin remains
-         * at or above 90%.
+         * ---------------------------------------------
+         * BIN REACHED 90%
+         * ---------------------------------------------
          */
 
         if (
-          !notifiedBins.current[bin.bin_id]
+          bin.current_level >= 90
         ) {
-          notifiedBins.current[bin.bin_id] = true;
 
-          sendBinNotification(bin);
+          console.log(
+            'BIN REACHED 90%:',
+            bin.name
+          );
+
+          /*
+           * -------------------------------------------
+           * ONLY SEND ONCE
+           * -------------------------------------------
+           */
+
+          if (
+            !notifiedBins.current[
+              bin.bin_id
+            ]
+          ) {
+
+            console.log(
+              'SENDING NOTIFICATION:',
+              bin.name
+            );
+
+            /*
+             * Mark as notified BEFORE sending
+             * to prevent duplicate notifications.
+             */
+
+            notifiedBins.current[
+              bin.bin_id
+            ] = true;
+
+            sendBinNotification(
+              bin
+            );
+
+          } else {
+
+            console.log(
+              'NOTIFICATION ALREADY SENT:',
+              bin.name
+            );
+
+          }
+
+          return;
         }
 
-        return;
-      }
+        /*
+         * ---------------------------------------------
+         * BIN DROPPED BELOW 90%
+         * ---------------------------------------------
+         *
+         * Reset the notification state.
+         *
+         * This allows another notification when
+         * the bin reaches 90% again.
+         *
+         * ---------------------------------------------
+         */
 
-      /*
-       * BIN DROPPED BELOW 90%
-       *
-       * Reset the notification state.
-       *
-       * This allows another notification when
-       * the bin reaches 90% again.
-       */
+        if (
+          bin.current_level < 90
+        ) {
 
-      notifiedBins.current[bin.bin_id] = false;
-    },
-    [sendBinNotification]
-  );
+          notifiedBins.current[
+            bin.bin_id
+          ] = false;
+
+        }
+
+      },
+
+      [
+        sendBinNotification,
+      ]
+    );
 
   /*
    * =====================================================
@@ -161,57 +312,100 @@ export default function Dashboard() {
    * =====================================================
    */
 
-  const fetchBins = useCallback(async () => {
-    try {
-      const {
-        data,
-        error,
-      } = await supabase
-        .from('bins')
-        .select('*')
-        .order('current_level', {
-          ascending: false,
-        });
+  const fetchBins =
+    useCallback(
+      async () => {
 
-      if (error) {
-        console.error(
-          'ERROR FETCHING BINS:',
-          error.message
-        );
+        try {
 
-        setBins([]);
-        return;
-      }
+          const {
+            data,
+            error,
+          } =
+            await supabase
+              .from('bins')
+              .select('*')
+              .order(
+                'current_level',
+                {
+                  ascending: false,
+                }
+              );
 
-      console.log(
-        'BINS FETCHED:',
-        data
-      );
+          /*
+           * -------------------------------------------
+           * DATABASE ERROR
+           * -------------------------------------------
+           */
 
-      const fetchedBins =
-        (data || []) as Bin[];
+          if (error) {
 
-      setBins(fetchedBins);
+            console.error(
+              'ERROR FETCHING BINS:',
+              error.message
+            );
 
-      /*
-       * Check every bin after fetching.
-       */
+            setBins([]);
 
-      fetchedBins.forEach((bin) => {
-        checkBinNotification(bin);
-      });
-    } catch (error) {
-      console.error(
-        'UNEXPECTED FETCH ERROR:',
-        error
-      );
+            return;
+          }
 
-      setBins([]);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [checkBinNotification]);
+          console.log(
+            'BINS FETCHED:',
+            data
+          );
+
+          /*
+           * -------------------------------------------
+           * CONVERT DATA
+           * -------------------------------------------
+           */
+
+          const fetchedBins =
+            (data || []) as Bin[];
+
+          setBins(
+            fetchedBins
+          );
+
+          /*
+           * -------------------------------------------
+           * CHECK EVERY BIN
+           * -------------------------------------------
+           */
+
+          fetchedBins.forEach(
+            (bin) => {
+
+              checkBinNotification(
+                bin
+              );
+
+            }
+          );
+
+        } catch (error) {
+
+          console.error(
+            'UNEXPECTED FETCH ERROR:',
+            error
+          );
+
+          setBins([]);
+
+        } finally {
+
+          setLoading(false);
+
+          setRefreshing(false);
+
+        }
+      },
+
+      [
+        checkBinNotification,
+      ]
+    );
 
   /*
    * =====================================================
@@ -220,210 +414,263 @@ export default function Dashboard() {
    */
 
   useEffect(() => {
+
     fetchBins();
-  }, [fetchBins]);
+
+  }, [
+    fetchBins,
+  ]);
 
   /*
    * =====================================================
    * REALTIME BIN UPDATES
    * =====================================================
-   *
-   * IMPORTANT:
-   *
-   * The callback is added BEFORE subscribe().
-   *
-   * We also remove any old channel with the same
-   * name before creating a new one.
-   *
-   * This prevents:
-   *
-   * "cannot add postgres_changes callbacks
-   * after subscribe()"
-   *
-   * =====================================================
    */
 
   useEffect(() => {
+
     let cancelled = false;
 
-    const setupRealtime = async () => {
-      const channelName =
-        'omnibin-bins';
+    const setupRealtime =
+      async () => {
 
-      console.log(
-        'SETTING UP BIN REALTIME...'
-      );
+        const channelName =
+          'omnibin-bins';
 
-      /*
-       * -------------------------------------------------
-       * REMOVE EXISTING CHANNEL
-       * -------------------------------------------------
-       *
-       * This is important when Expo Fast Refresh
-       * recreates the component.
-       */
-
-      const existingChannels =
-        supabase.getChannels();
-
-      const existingChannel =
-        existingChannels.find(
-          (channel) =>
-            channel.topic ===
-            `realtime:${channelName}`
-        );
-
-      if (existingChannel) {
         console.log(
-          'REMOVING EXISTING BIN REALTIME CHANNEL...'
+          'SETTING UP BIN REALTIME...'
         );
 
-        await supabase.removeChannel(
+        /*
+         * ---------------------------------------------
+         * REMOVE EXISTING CHANNEL
+         * ---------------------------------------------
+         */
+
+        const existingChannels =
+          supabase.getChannels();
+
+        const existingChannel =
+          existingChannels.find(
+            (channel) =>
+              channel.topic ===
+              `realtime:${channelName}`
+          );
+
+        if (
           existingChannel
-        );
-      }
-
-      /*
-       * If component was unmounted while the old
-       * channel was being removed, stop here.
-       */
-
-      if (cancelled) {
-        return null;
-      }
-
-      /*
-       * -------------------------------------------------
-       * CREATE CHANNEL
-       * -------------------------------------------------
-       */
-
-      const channel =
-        supabase.channel(
-          channelName
-        );
-
-      /*
-       * -------------------------------------------------
-       * ADD REALTIME LISTENER
-       * -------------------------------------------------
-       *
-       * MUST happen BEFORE subscribe().
-       */
-
-      channel.on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'bins',
-        },
-        (payload) => {
-          console.log(
-            '================================='
-          );
+        ) {
 
           console.log(
-            'BIN REALTIME UPDATE'
+            'REMOVING EXISTING BIN REALTIME CHANNEL...'
           );
 
-          console.log(
-            'OLD DATA:',
-            payload.old
+          await supabase.removeChannel(
+            existingChannel
           );
 
-          console.log(
-            'NEW DATA:',
-            payload.new
-          );
-
-          console.log(
-            '================================='
-          );
-
-          /*
-           * Convert the updated database
-           * record into a Bin object.
-           */
-
-          const updatedBin =
-            payload.new as Bin;
-
-          /*
-           * Check whether this bin reached
-           * 90%.
-           */
-
-          checkBinNotification(
-            updatedBin
-          );
-
-          /*
-           * Refresh the dashboard.
-           */
-
-          fetchBins();
         }
-      );
 
-      /*
-       * -------------------------------------------------
-       * SUBSCRIBE
-       * -------------------------------------------------
-       */
+        /*
+         * ---------------------------------------------
+         * CHECK CANCELLATION
+         * ---------------------------------------------
+         */
 
-      channel.subscribe(
-        (status) => {
-          console.log(
-            'REALTIME STATUS:',
-            status
+        if (
+          cancelled
+        ) {
+
+          return null;
+
+        }
+
+        /*
+         * ---------------------------------------------
+         * CREATE CHANNEL
+         * ---------------------------------------------
+         */
+
+        const channel =
+          supabase.channel(
+            channelName
           );
 
-          if (
-            status ===
-            'SUBSCRIBED'
-          ) {
+        /*
+         * ---------------------------------------------
+         * ADD REALTIME LISTENER
+         * ---------------------------------------------
+         *
+         * IMPORTANT:
+         *
+         * The listener MUST be added
+         * before subscribe().
+         *
+         * ---------------------------------------------
+         */
+
+        channel.on(
+          'postgres_changes',
+
+          {
+            event:
+              'UPDATE',
+
+            schema:
+              'public',
+
+            table:
+              'bins',
+
+          },
+
+          (payload) => {
+
             console.log(
-              'REALTIME CONNECTED SUCCESSFULLY'
+              '================================='
             );
-          }
 
-          if (
-            status ===
-            'CHANNEL_ERROR'
-          ) {
-            console.error(
-              'REALTIME CHANNEL ERROR'
-            );
-          }
-
-          if (
-            status ===
-            'TIMED_OUT'
-          ) {
-            console.error(
-              'REALTIME CONNECTION TIMED OUT'
-            );
-          }
-
-          if (
-            status ===
-            'CLOSED'
-          ) {
             console.log(
-              'REALTIME CHANNEL CLOSED'
+              'BIN REALTIME UPDATE'
             );
-          }
-        }
-      );
 
-      return channel;
-    };
+            console.log(
+              'OLD DATA:',
+              payload.old
+            );
+
+            console.log(
+              'NEW DATA:',
+              payload.new
+            );
+
+            console.log(
+              '================================='
+            );
+
+            /*
+             * -----------------------------------------
+             * CONVERT UPDATED BIN
+             * -----------------------------------------
+             */
+
+            const updatedBin =
+              payload.new as Bin;
+
+            /*
+             * -----------------------------------------
+             * CHECK NOTIFICATION
+             * -----------------------------------------
+             */
+
+            checkBinNotification(
+              updatedBin
+            );
+
+            /*
+             * -----------------------------------------
+             * REFRESH DASHBOARD
+             * -----------------------------------------
+             */
+
+            fetchBins();
+
+          }
+        );
+
+        /*
+         * ---------------------------------------------
+         * SUBSCRIBE
+         * ---------------------------------------------
+         */
+
+        channel.subscribe(
+          (status) => {
+
+            console.log(
+              'REALTIME STATUS:',
+              status
+            );
+
+            /*
+             * -----------------------------------------
+             * CONNECTED
+             * -----------------------------------------
+             */
+
+            if (
+              status ===
+              'SUBSCRIBED'
+            ) {
+
+              console.log(
+                'REALTIME CONNECTED SUCCESSFULLY'
+              );
+
+            }
+
+            /*
+             * -----------------------------------------
+             * ERROR
+             * -----------------------------------------
+             */
+
+            if (
+              status ===
+              'CHANNEL_ERROR'
+            ) {
+
+              console.error(
+                'REALTIME CHANNEL ERROR'
+              );
+
+            }
+
+            /*
+             * -----------------------------------------
+             * TIMEOUT
+             * -----------------------------------------
+             */
+
+            if (
+              status ===
+              'TIMED_OUT'
+            ) {
+
+              console.error(
+                'REALTIME CONNECTION TIMED OUT'
+              );
+
+            }
+
+            /*
+             * -----------------------------------------
+             * CLOSED
+             * -----------------------------------------
+             */
+
+            if (
+              status ===
+              'CLOSED'
+            ) {
+
+              console.log(
+                'REALTIME CHANNEL CLOSED'
+              );
+
+            }
+
+          }
+        );
+
+        return channel;
+
+      };
 
     /*
-     * -------------------------------------------------
+     * =================================================
      * SETUP CHANNEL
-     * -------------------------------------------------
+     * =================================================
      */
 
     let realtimeChannel:
@@ -431,38 +678,45 @@ export default function Dashboard() {
         typeof supabase.channel
       > | null = null;
 
-    setupRealtime().then(
-      (channel) => {
-        if (
-          channel &&
-          !cancelled
-        ) {
-          realtimeChannel =
-            channel;
-        } else if (channel) {
-          /*
-           * If component was unmounted while
-           * the channel was being created,
-           * remove it immediately.
-           */
+    setupRealtime()
+      .then(
+        (channel) => {
 
-          supabase.removeChannel(
+          if (
+            channel &&
+            !cancelled
+          ) {
+
+            realtimeChannel =
+              channel;
+
+          } else if (
             channel
-          );
+          ) {
+
+            supabase.removeChannel(
+              channel
+            );
+
+          }
+
         }
-      }
-    );
+      );
 
     /*
-     * -------------------------------------------------
+     * =================================================
      * CLEANUP
-     * -------------------------------------------------
+     * =================================================
      */
 
     return () => {
+
       cancelled = true;
 
-      if (realtimeChannel) {
+      if (
+        realtimeChannel
+      ) {
+
         console.log(
           'REMOVING BIN REALTIME CHANNEL...'
         );
@@ -471,9 +725,13 @@ export default function Dashboard() {
           realtimeChannel
         );
 
-        realtimeChannel = null;
+        realtimeChannel =
+          null;
+
       }
+
     };
+
   }, [
     fetchBins,
     checkBinNotification,
@@ -485,11 +743,16 @@ export default function Dashboard() {
    * =====================================================
    */
 
-  const onRefresh = () => {
-    setRefreshing(true);
+  const onRefresh =
+    () => {
 
-    fetchBins();
-  };
+      setRefreshing(
+        true
+      );
+
+      fetchBins();
+
+    };
 
   /*
    * =====================================================
@@ -497,19 +760,30 @@ export default function Dashboard() {
    * =====================================================
    */
 
-  const getStatus = (
-    level: number
-  ) => {
-    if (level >= 90) {
-      return 'FULL';
-    }
+  const getStatus =
+    (
+      level: number
+    ) => {
 
-    if (level >= 50) {
-      return 'HALF FULL';
-    }
+      if (
+        level >= 90
+      ) {
 
-    return 'AVAILABLE';
-  };
+        return 'FULL';
+
+      }
+
+      if (
+        level >= 50
+      ) {
+
+        return 'HALF FULL';
+
+      }
+
+      return 'AVAILABLE';
+
+    };
 
   /*
    * =====================================================
@@ -517,19 +791,30 @@ export default function Dashboard() {
    * =====================================================
    */
 
-  const getStatusColor = (
-    level: number
-  ) => {
-    if (level >= 90) {
-      return '#C62828';
-    }
+  const getStatusColor =
+    (
+      level: number
+    ) => {
 
-    if (level >= 50) {
-      return '#F9A825';
-    }
+      if (
+        level >= 90
+      ) {
 
-    return '#2E7D32';
-  };
+        return '#C62828';
+
+      }
+
+      if (
+        level >= 50
+      ) {
+
+        return '#F9A825';
+
+      }
+
+      return '#2E7D32';
+
+    };
 
   /*
    * =====================================================
@@ -537,37 +822,46 @@ export default function Dashboard() {
    * =====================================================
    */
 
-  const getWasteIcon = (
-    wasteType: string
-  ) => {
-    const type =
-      wasteType
-        .toLowerCase()
-        .trim();
+  const getWasteIcon =
+    (
+      wasteType: string
+    ) => {
 
-    if (
-      type ===
-      'biodegradable'
-    ) {
-      return 'leaf-outline';
-    }
+      const type =
+        wasteType
+          .toLowerCase()
+          .trim();
 
-    if (
-      type ===
-      'non-biodegradable'
-    ) {
+      if (
+        type ===
+        'biodegradable'
+      ) {
+
+        return 'leaf-outline';
+
+      }
+
+      if (
+        type ===
+        'non-biodegradable'
+      ) {
+
+        return 'trash-bin-outline';
+
+      }
+
+      if (
+        type ===
+        'recyclable'
+      ) {
+
+        return 'recycle-outline';
+
+      }
+
       return 'trash-bin-outline';
-    }
 
-    if (
-      type ===
-      'recyclable'
-    ) {
-      return 'recycle-outline';
-    }
-
-    return 'trash-bin-outline';
-  };
+    };
 
   /*
    * =====================================================
@@ -576,33 +870,45 @@ export default function Dashboard() {
    */
 
   return (
+
     <View
       style={
         styles.screen
       }
     >
+
       <View
         style={
           styles.container
         }
       >
+
         <ScrollView
+
           contentContainerStyle={
             styles.content
           }
+
           refreshControl={
+
             <RefreshControl
+
               refreshing={
                 refreshing
               }
+
               onRefresh={
                 onRefresh
               }
+
             />
+
           }
+
           showsVerticalScrollIndicator={
             false
           }
+
         >
 
           {/* HEADER */}
@@ -619,6 +925,7 @@ export default function Dashboard() {
               styles.welcome
             }
           >
+
             <Text
               style={
                 styles.welcomeTitle
@@ -636,20 +943,26 @@ export default function Dashboard() {
               status of all waste
               bins.
             </Text>
+
           </View>
 
           {/* LOADING */}
 
           {loading ? (
+
             <ActivityIndicator
+
               size="large"
+
               color="#1B5E20"
+
               style={
                 styles.loading
               }
+
             />
-          ) : bins.length ===
-            0 ? (
+
+          ) : bins.length === 0 ? (
 
             /* EMPTY STATE */
 
@@ -658,16 +971,23 @@ export default function Dashboard() {
                 styles.emptyContainer
               }
             >
+
               <View
                 style={
                   styles.emptyIcon
                 }
               >
+
                 <Ionicons
+
                   name="trash-outline"
+
                   size={30}
+
                   color="#8A8A8A"
+
                 />
+
               </View>
 
               <Text
@@ -688,6 +1008,7 @@ export default function Dashboard() {
                 information
                 available.
               </Text>
+
             </View>
 
           ) : (
@@ -695,8 +1016,10 @@ export default function Dashboard() {
             /* BIN LIST */
 
             <View>
+
               {bins.map(
                 (bin) => {
+
                   const status =
                     getStatus(
                       bin.current_level
@@ -708,13 +1031,17 @@ export default function Dashboard() {
                     );
 
                   return (
+
                     <View
+
                       key={
                         bin.bin_id
                       }
+
                       style={
                         styles.card
                       }
+
                     >
 
                       {/* CARD HEADER */}
@@ -724,6 +1051,7 @@ export default function Dashboard() {
                           styles.cardHeader
                         }
                       >
+
                         <View
                           style={
                             styles.binTitleContainer
@@ -744,22 +1072,29 @@ export default function Dashboard() {
                               },
                             ]}
                           >
+
                             <Ionicons
+
                               name={
                                 getWasteIcon(
                                   bin.waste_type
                                 ) as any
                               }
+
                               size={21}
+
                               color={
                                 statusColor
                               }
+
                             />
+
                           </View>
 
                           {/* BIN INFORMATION */}
 
                           <View>
+
                             <Text
                               style={
                                 styles.binName
@@ -779,7 +1114,9 @@ export default function Dashboard() {
                                 bin.name
                               }
                             </Text>
+
                           </View>
+
                         </View>
 
                         {/* STATUS */}
@@ -797,6 +1134,7 @@ export default function Dashboard() {
                             status
                           }
                         </Text>
+
                       </View>
 
                       {/* LEVEL */}
@@ -806,6 +1144,7 @@ export default function Dashboard() {
                           styles.levelRow
                         }
                       >
+
                         <Text
                           style={[
                             styles.level,
@@ -827,6 +1166,7 @@ export default function Dashboard() {
                         >
                           Capacity
                         </Text>
+
                       </View>
 
                       {/* PROGRESS BAR */}
@@ -836,6 +1176,7 @@ export default function Dashboard() {
                           styles.progressBackground
                         }
                       >
+
                         <View
                           style={[
                             styles.progress,
@@ -847,11 +1188,13 @@ export default function Dashboard() {
                                 ),
                                 100
                               )}%`,
+
                               backgroundColor:
                                 statusColor,
                             },
                           ]}
                         />
+
                       </View>
 
                       {/* LOCATION */}
@@ -861,10 +1204,15 @@ export default function Dashboard() {
                           styles.infoRow
                         }
                       >
+
                         <Ionicons
+
                           name="location-outline"
+
                           size={16}
+
                           color="#777777"
+
                         />
 
                         <Text
@@ -876,6 +1224,7 @@ export default function Dashboard() {
                             bin.location
                           }
                         </Text>
+
                       </View>
 
                       {/* LAST UPDATED */}
@@ -885,10 +1234,15 @@ export default function Dashboard() {
                           styles.infoRow
                         }
                       >
+
                         <Ionicons
+
                           name="time-outline"
+
                           size={15}
+
                           color="#999999"
+
                         />
 
                         <Text
@@ -897,19 +1251,28 @@ export default function Dashboard() {
                           }
                         >
                           Last updated:{' '}
+
                           {bin.updated_at
+
                             ? new Date(
                                 bin.updated_at
                               ).toLocaleString()
+
                             : 'N/A'}
+
                         </Text>
+
                       </View>
 
                     </View>
+
                   );
+
                 }
               )}
+
             </View>
+
           )}
 
         </ScrollView>
@@ -919,7 +1282,9 @@ export default function Dashboard() {
         <BottomNav />
 
       </View>
+
     </View>
+
   );
 }
 

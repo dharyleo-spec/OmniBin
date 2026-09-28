@@ -70,7 +70,8 @@ export async function registerForPushNotifications() {
       } =
         await Notifications.requestPermissionsAsync();
 
-      finalStatus = status;
+      finalStatus =
+        status;
     }
 
     if (
