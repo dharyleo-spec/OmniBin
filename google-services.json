@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "183722002650",
+    "firebase_url": "https://omnibin-256e9-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "omnibin-256e9",
+    "storage_bucket": "omnibin-256e9.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:183722002650:android:1ce1b7591fa40ef17e3de3",
+        "android_client_info": {
+          "package_name": "com.dhan17steam.dharyll"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBkOsVSzOwNPJ9CEcz2eMdjHdZT2xRXGfw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

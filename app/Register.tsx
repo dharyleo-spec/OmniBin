@@ -141,14 +141,14 @@ export default function Register() {
 
           {/* LOGO */}
           <Image
-            source={require('../assets/omnibin-logo.png')}
+            source={require('../assets/images/omnibin-logo.png')}
             style={styles.logoImage}
             resizeMode="contain"
           />
 
           {/* NAMEPLATE */}
           <Image
-            source={require('../assets/omnibin-nameplate.png')}
+            source={require('../assets/images/omnibin-nameplate.png')}
             style={styles.nameplateImage}
             resizeMode="contain"
           />
