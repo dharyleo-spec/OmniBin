@@ -146,13 +146,6 @@ export default function Register() {
             resizeMode="contain"
           />
 
-          {/* NAMEPLATE */}
-          <Image
-            source={require('../assets/images/omnibin-nameplate.png')}
-            style={styles.nameplateImage}
-            resizeMode="contain"
-          />
-
           <Text style={styles.title}>
             Create Account
           </Text>

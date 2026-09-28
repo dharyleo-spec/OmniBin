@@ -1,18 +1,18 @@
 import { useCallback, useState } from 'react';
 
 import {
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
+    Pressable,
+    StyleSheet,
+    Text,
+    View,
 } from 'react-native';
 
 import { Ionicons } from '@expo/vector-icons';
 
 import {
-  useFocusEffect,
-  usePathname,
-  useRouter,
+    useFocusEffect,
+    usePathname,
+    useRouter,
 } from 'expo-router';
 
 import { supabase } from '../lib/supabase';
@@ -38,8 +38,8 @@ export default function BottomNav() {
         .eq('is_read', false);
 
       if (error) {
-        console.error(
-          'Error checking unread notifications:',
+        console.warn(
+          'Unread notification check skipped:',
           error.message
         );
 

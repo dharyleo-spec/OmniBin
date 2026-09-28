@@ -1,14 +1,16 @@
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
+
 import {
-  ActivityIndicator,
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
+    ActivityIndicator,
+    Modal,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    View,
 } from 'react-native';
 
 import BottomNav from '../components/BottomNav';
@@ -96,25 +98,46 @@ export default function Profile() {
         >
 
           {/* PROFILE HEADER */}
-          <View style={styles.header}>
+
+          <LinearGradient
+            colors={[
+              '#1B5E20',
+              '#2E7D32',
+              '#1B5E20',
+            ]}
+            start={{
+              x: 0,
+              y: 0,
+            }}
+            end={{
+              x: 1,
+              y: 1,
+            }}
+            style={styles.header}
+          >
 
             <View style={styles.profileIcon}>
+
               <Ionicons
                 name="person"
                 size={38}
                 color="#1B5E20"
               />
+
             </View>
 
             <View style={styles.profileInfo}>
 
               {loading ? (
+
                 <ActivityIndicator
                   size="small"
                   color="#DDEBDD"
                   style={styles.nameLoader}
                 />
+
               ) : (
+
                 <Text
                   style={styles.name}
                   numberOfLines={1}
@@ -122,15 +145,19 @@ export default function Profile() {
                 >
                   {displayName}
                 </Text>
+
               )}
 
               {loading ? (
+
                 <ActivityIndicator
                   size="small"
                   color="#DDEBDD"
                   style={styles.emailLoader}
                 />
+
               ) : (
+
                 <Text
                   style={styles.email}
                   numberOfLines={1}
@@ -138,13 +165,15 @@ export default function Profile() {
                 >
                   {email || 'No email available'}
                 </Text>
+
               )}
 
             </View>
 
-          </View>
+          </LinearGradient>
 
           {/* ACCESS INFORMATION */}
+
           <View style={styles.section}>
 
             <Text style={styles.sectionTitle}>
@@ -154,14 +183,17 @@ export default function Profile() {
             <View style={styles.card}>
 
               {/* ACCESS LEVEL */}
+
               <View style={styles.infoRow}>
 
                 <View style={styles.iconBox}>
+
                   <Ionicons
                     name="shield-checkmark-outline"
                     size={21}
                     color="#1B5E20"
                   />
+
                 </View>
 
                 <View style={styles.infoText}>
@@ -181,14 +213,17 @@ export default function Profile() {
               <View style={styles.divider} />
 
               {/* ACCESS PLACE */}
+
               <View style={styles.infoRow}>
 
                 <View style={styles.iconBox}>
+
                   <Ionicons
                     name="location-outline"
                     size={21}
                     color="#1B5E20"
                   />
+
                 </View>
 
                 <View style={styles.infoText}>
@@ -210,6 +245,7 @@ export default function Profile() {
           </View>
 
           {/* SYSTEM INFORMATION */}
+
           <View style={styles.section}>
 
             <Text style={styles.sectionTitle}>
@@ -219,14 +255,17 @@ export default function Profile() {
             <View style={styles.card}>
 
               {/* SYSTEM */}
+
               <View style={styles.infoRow}>
 
                 <View style={styles.iconBox}>
+
                   <Ionicons
                     name="trash-outline"
                     size={21}
                     color="#1B5E20"
                   />
+
                 </View>
 
                 <View style={styles.infoText}>
@@ -246,14 +285,17 @@ export default function Profile() {
               <View style={styles.divider} />
 
               {/* APPLICATION */}
+
               <View style={styles.infoRow}>
 
                 <View style={styles.iconBox}>
+
                   <Ionicons
                     name="phone-portrait-outline"
                     size={21}
                     color="#1B5E20"
                   />
+
                 </View>
 
                 <View style={styles.infoText}>
@@ -273,14 +315,17 @@ export default function Profile() {
               <View style={styles.divider} />
 
               {/* VERSION */}
+
               <View style={styles.infoRow}>
 
                 <View style={styles.iconBox}>
+
                   <Ionicons
                     name="information-circle-outline"
                     size={21}
                     color="#1B5E20"
                   />
+
                 </View>
 
                 <View style={styles.infoText}>
@@ -302,6 +347,7 @@ export default function Profile() {
           </View>
 
           {/* LOGOUT */}
+
           <Pressable
             style={styles.logoutButton}
             onPress={() =>
@@ -328,6 +374,7 @@ export default function Profile() {
       </View>
 
       {/* LOGOUT MODAL */}
+
       <Modal
         visible={showLogoutModal}
         transparent
@@ -342,11 +389,13 @@ export default function Profile() {
           <View style={styles.modalCard}>
 
             <View style={styles.modalIcon}>
+
               <Ionicons
                 name="log-out-outline"
                 size={30}
                 color="#C62828"
               />
+
             </View>
 
             <Text style={styles.modalTitle}>
@@ -359,24 +408,32 @@ export default function Profile() {
 
             <View style={styles.modalButtons}>
 
+              {/* CANCEL */}
+
               <Pressable
                 style={styles.cancelButton}
                 onPress={() =>
                   setShowLogoutModal(false)
                 }
               >
+
                 <Text style={styles.cancelText}>
                   Cancel
                 </Text>
+
               </Pressable>
+
+              {/* CONFIRM */}
 
               <Pressable
                 style={styles.confirmButton}
                 onPress={handleLogout}
               >
+
                 <Text style={styles.confirmText}>
                   Log Out
                 </Text>
+
               </Pressable>
 
             </View>
@@ -410,7 +467,6 @@ const styles = StyleSheet.create({
   /* PROFILE HEADER */
 
   header: {
-    backgroundColor: '#1B5E20',
     paddingTop: 55,
     paddingBottom: 30,
     paddingHorizontal: 24,
@@ -423,6 +479,7 @@ const styles = StyleSheet.create({
     width: 76,
     height: 76,
     borderRadius: 38,
+
     backgroundColor: '#FFFFFF',
 
     alignItems: 'center',
@@ -466,6 +523,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     color: '#222222',
+
     marginHorizontal: 20,
     marginBottom: 10,
   },
@@ -474,15 +532,20 @@ const styles = StyleSheet.create({
 
   card: {
     backgroundColor: '#FFFFFF',
+
     marginHorizontal: 20,
+
     borderRadius: 16,
+
     padding: 18,
 
     shadowColor: '#000',
+
     shadowOffset: {
       width: 0,
       height: 2,
     },
+
     shadowOpacity: 0.05,
     shadowRadius: 4,
 
@@ -497,6 +560,7 @@ const styles = StyleSheet.create({
   iconBox: {
     width: 42,
     height: 42,
+
     borderRadius: 21,
 
     backgroundColor: '#E8F5E9',
@@ -514,6 +578,7 @@ const styles = StyleSheet.create({
   label: {
     color: '#999999',
     fontSize: 12,
+
     marginBottom: 3,
   },
 
@@ -525,7 +590,9 @@ const styles = StyleSheet.create({
 
   divider: {
     height: 1,
+
     backgroundColor: '#EEEEEE',
+
     marginVertical: 15,
   },
 
@@ -533,10 +600,12 @@ const styles = StyleSheet.create({
 
   logoutButton: {
     marginHorizontal: 20,
+
     marginTop: 25,
     marginBottom: 10,
 
     height: 52,
+
     borderRadius: 14,
 
     backgroundColor: '#FFFFFF',
@@ -549,10 +618,12 @@ const styles = StyleSheet.create({
     borderColor: '#FFCDD2',
 
     shadowColor: '#000',
+
     shadowOffset: {
       width: 0,
       height: 2,
     },
+
     shadowOpacity: 0.04,
     shadowRadius: 4,
 
@@ -561,8 +632,10 @@ const styles = StyleSheet.create({
 
   logoutText: {
     color: '#C62828',
+
     fontSize: 15,
     fontWeight: 'bold',
+
     marginLeft: 8,
   },
 
@@ -570,25 +643,34 @@ const styles = StyleSheet.create({
 
   modalOverlay: {
     flex: 1,
+
     backgroundColor: 'rgba(0, 0, 0, 0.45)',
+
     justifyContent: 'center',
     alignItems: 'center',
+
     padding: 25,
   },
 
   modalCard: {
     width: '100%',
     maxWidth: 380,
+
     backgroundColor: '#FFFFFF',
+
     borderRadius: 20,
+
     padding: 28,
+
     alignItems: 'center',
 
     shadowColor: '#000',
+
     shadowOffset: {
       width: 0,
       height: 3,
     },
+
     shadowOpacity: 0.15,
     shadowRadius: 8,
 
@@ -598,6 +680,7 @@ const styles = StyleSheet.create({
   modalIcon: {
     width: 55,
     height: 55,
+
     borderRadius: 28,
 
     backgroundColor: '#FFEBEE',
@@ -610,50 +693,70 @@ const styles = StyleSheet.create({
 
   modalTitle: {
     fontSize: 20,
+
     fontWeight: 'bold',
+
     color: '#222222',
+
     textAlign: 'center',
   },
 
   modalMessage: {
     fontSize: 14,
+
     color: '#666666',
+
     textAlign: 'center',
+
     marginTop: 8,
     marginBottom: 24,
   },
 
   modalButtons: {
     width: '100%',
+
     flexDirection: 'row',
+
     gap: 10,
   },
 
   cancelButton: {
     flex: 1,
+
     backgroundColor: '#F5F5F5',
+
     paddingVertical: 13,
+
     borderRadius: 12,
+
     alignItems: 'center',
   },
 
   cancelText: {
     color: '#555555',
+
     fontSize: 15,
+
     fontWeight: '600',
   },
 
   confirmButton: {
     flex: 1,
+
     backgroundColor: '#C62828',
+
     paddingVertical: 13,
+
     borderRadius: 12,
+
     alignItems: 'center',
   },
 
   confirmText: {
     color: '#FFFFFF',
+
     fontSize: 15,
+
     fontWeight: 'bold',
   },
 
