@@ -116,7 +116,7 @@ export default function Register() {
       setLoading(false);
 
       setTimeout(() => {
-        router.replace('/(tabs)');
+        router.replace('/');
       }, 1500);
 
     } catch (error) {
@@ -310,7 +310,7 @@ export default function Register() {
 
           <TouchableOpacity
             onPress={() =>
-              router.replace('/(tabs)')
+              router.replace('/')
             }
             disabled={loading}
           >

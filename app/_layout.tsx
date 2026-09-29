@@ -1,7 +1,6 @@
 import {
   Stack,
   router,
-  useSegments,
 } from 'expo-router';
 
 import {
@@ -43,8 +42,6 @@ Notifications.setNotificationHandler({
 
 
 export default function RootLayout() {
-
-  const segments = useSegments();
 
   const [session, setSession] =
     useState<any>(null);
@@ -165,7 +162,7 @@ const pushRegisteredForUser =
           ) {
 
             router.replace(
-              '/(tabs)'
+              '/'
             );
 
           }
@@ -304,76 +301,55 @@ const pushRegisteredForUser =
     }, [session]);
 
 
+/*
+ * =====================================================
+ * ROUTE PROTECTION
+ * =====================================================
+ */
+
+useEffect(() => {
+
+  if (loading) {
+    return;
+  }
+
   /*
-   * =====================================================
-   * ROUTE PROTECTION
-   * =====================================================
+   * ===================================================
+   * NO SESSION
+   * ===================================================
+   *
+   * Send unauthenticated users to the login page.
+   *
+   * ===================================================
    */
 
-  useEffect(() => {
+  if (!session) {
 
-    if (loading) {
-      return;
-    }
+    router.replace('/');
 
+    return;
+  }
 
-    const firstSegment =
-      segments[0];
+  /*
+   * ===================================================
+   * SESSION EXISTS
+   * ===================================================
+   *
+   * Do not redirect.
+   *
+   * The user can stay on:
+   *
+   * Dashboard
+   * Notifications
+   * Profile
+   *
+   * ===================================================
+   */
 
-
-    const isLoginPage =
-      firstSegment ===
-      '(tabs)';
-
-
-    const isRegisterPage =
-      firstSegment ===
-      'Register';
-
-
-    const isAuthPage =
-      isLoginPage ||
-      isRegisterPage;
-
-
-    /*
-     * ===================================================
-     * NO SESSION
-     * ===================================================
-     */
-
-    if (
-      !session &&
-      !isAuthPage
-    ) {
-
-      router.replace(
-        '/(tabs)'
-      );
-
-      return;
-    }
-
-
-    /*
-     * ===================================================
-     * SESSION EXISTS
-     * ===================================================
-     *
-     * Do not redirect.
-     *
-     * The user can stay on:
-     *
-     * Dashboard
-     * Notifications
-     * Profile
-     */
-
-  }, [
-    session,
-    loading,
-    segments,
-  ]);
+}, [
+  session,
+  loading,
+]);
 
 
   /*

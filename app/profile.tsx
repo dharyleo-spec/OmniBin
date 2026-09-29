@@ -4,13 +4,13 @@ import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 
 import {
-    ActivityIndicator,
-    Modal,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    View,
+  ActivityIndicator,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
 } from 'react-native';
 
 import BottomNav from '../components/BottomNav';
@@ -85,7 +85,7 @@ export default function Profile() {
       return;
     }
 
-    router.replace('/(tabs)');
+    router.replace('/');
   };
 
   return (
