@@ -79,7 +79,8 @@ export default function Register() {
           password: password,
 
           options: {
-            emailRedirectTo: 'omnibin://',
+            emailRedirectTo:
+              'omnibin://auth/callback',
 
             data: {
               display_name:
