@@ -6,6 +6,7 @@ import {
 
 import {
   useEffect,
+  useRef,
   useState,
 } from 'react';
 
@@ -50,6 +51,9 @@ export default function RootLayout() {
 
   const [loading, setLoading] =
     useState(true);
+
+const pushRegisteredForUser =
+  useRef<string | null>(null);
 
 
   /*
@@ -199,77 +203,105 @@ export default function RootLayout() {
    * Dashboard, Notifications, or Profile.
    */
 
-  useEffect(() => {
+    useEffect(() => {
 
-    if (!session) {
-
-      console.log(
-        'PUSH REGISTRATION SKIPPED: No session'
-      );
-
-      return;
-
-    }
-
-
-    const registerPush =
-      async () => {
+      if (!session) {
 
         console.log(
-          '================================='
+          'PUSH REGISTRATION SKIPPED: No session'
         );
+
+        return;
+
+      }
+
+      const userId =
+        session.user?.id;
+
+      if (!userId) {
 
         console.log(
-          'REGISTERING PUSH NOTIFICATIONS...'
+          'PUSH REGISTRATION SKIPPED: No user ID'
         );
+
+        return;
+
+      }
+
+      if (
+        pushRegisteredForUser.current ===
+        userId
+      ) {
 
         console.log(
-          'USER:',
-          session.user?.email
+          'PUSH REGISTRATION ALREADY COMPLETED FOR USER'
         );
 
-        console.log(
-          '================================='
-        );
+        return;
 
+      }
 
-        const token =
-          await registerForPushNotifications();
+      pushRegisteredForUser.current =
+        userId;
 
-
-        if (token) {
+      const registerPush =
+        async () => {
 
           console.log(
             '================================='
           );
 
           console.log(
-            'PUSH NOTIFICATIONS READY'
+            'REGISTERING PUSH NOTIFICATIONS...'
           );
 
           console.log(
-            'TOKEN:',
-            token
+            'USER:',
+            session.user?.email
           );
 
           console.log(
             '================================='
           );
 
-        } else {
+          const token =
+            await registerForPushNotifications();
 
-          console.error(
-            'PUSH NOTIFICATION REGISTRATION FAILED'
-          );
+          if (token) {
 
-        }
+            console.log(
+              '================================='
+            );
 
-      };
+            console.log(
+              'PUSH NOTIFICATIONS READY'
+            );
 
+            console.log(
+              'TOKEN:',
+              token
+            );
 
-    registerPush();
+            console.log(
+              '================================='
+            );
 
-  }, [session]);
+          } else {
+
+            console.error(
+              'PUSH NOTIFICATION REGISTRATION FAILED'
+            );
+
+            pushRegisteredForUser.current =
+              null;
+
+          }
+
+        };
+
+      void registerPush();
+
+    }, [session]);
 
 
   /*

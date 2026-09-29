@@ -1,10 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
-import * as Notifications from 'expo-notifications';
 
 import {
   useCallback,
   useEffect,
-  useRef,
   useState,
 } from 'react';
 
@@ -20,31 +18,7 @@ import {
 import BottomNav from '../components/BottomNav';
 import Header from '../components/Header';
 
-import {
-  registerForPushNotifications,
-} from '../lib/notifications';
-
 import { supabase } from '../lib/supabase';
-
-/*
- * =====================================================
- * NOTIFICATION HANDLER
- * =====================================================
- *
- * Allows notifications to appear while the app
- * is currently open.
- *
- * =====================================================
- */
-
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
-});
 
 /*
  * =====================================================
@@ -78,228 +52,6 @@ export default function Dashboard() {
 
   const [refreshing, setRefreshing] =
     useState(false);
-
-  /*
-   * =====================================================
-   * TRACK NOTIFIED BINS
-   * =====================================================
-   *
-   * Prevents repeated notifications while a bin
-   * remains at 90% or higher.
-   *
-   * =====================================================
-   */
-
-  const notifiedBins =
-    useRef<Record<number, boolean>>({});
-
-  /*
-   * =====================================================
-   * REGISTER PUSH NOTIFICATIONS
-   * =====================================================
-   */
-
-  useEffect(() => {
-
-    console.log(
-      'STARTING PUSH NOTIFICATION REGISTRATION...'
-    );
-
-    registerForPushNotifications();
-
-  }, []);
-
-  /*
-   * =====================================================
-   * SEND BIN NOTIFICATION
-   * =====================================================
-   */
-
-  const sendBinNotification =
-    useCallback(
-      async (bin: Bin) => {
-
-        try {
-
-          console.log(
-            '================================='
-          );
-
-          console.log(
-            'SENDING BIN NOTIFICATION'
-          );
-
-          console.log(
-            'BIN:',
-            bin.name
-          );
-
-          console.log(
-            'LEVEL:',
-            bin.current_level
-          );
-
-          /*
-           * ---------------------------------------------
-           * CREATE LOCAL ANDROID NOTIFICATION
-           * ---------------------------------------------
-           *
-           * IMPORTANT:
-           *
-           * channelId belongs inside trigger.
-           * It does NOT belong inside content.
-           *
-           * A 1-second trigger is used so Android
-           * can use the OmniBin notification channel.
-           *
-           * ---------------------------------------------
-           */
-
-          await Notifications.scheduleNotificationAsync({
-            content: {
-              title: 'OmniBin Alert',
-              body: `${bin.waste_type} bin has reached ${bin.current_level}%. Please collect bin now.`,
-              sound: 'omnibin_alert',
-              data: {
-                bin_id: bin.bin_id,
-                waste_type: bin.waste_type,
-                level: bin.current_level,
-              },
-            },
-
-            trigger: {
-              type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-              seconds: 1,
-              repeats: false,
-              channelId: 'omnibin-alerts',
-            },
-          });
-
-          console.log(
-            'BIN NOTIFICATION SCHEDULED:',
-            bin.name
-          );
-
-          console.log(
-            '================================='
-          );
-
-        } catch (error) {
-
-          console.error(
-            'NOTIFICATION ERROR:',
-            error
-          );
-
-        }
-
-      },
-
-      []
-    );
-
-  /*
-   * =====================================================
-   * CHECK BIN NOTIFICATION
-   * =====================================================
-   */
-
-  const checkBinNotification =
-    useCallback(
-      (bin: Bin) => {
-
-        console.log(
-          'CHECKING BIN NOTIFICATION:',
-          bin.name,
-          bin.current_level
-        );
-
-        /*
-         * ---------------------------------------------
-         * BIN REACHED 90%
-         * ---------------------------------------------
-         */
-
-        if (
-          bin.current_level >= 90
-        ) {
-
-          console.log(
-            'BIN REACHED 90%:',
-            bin.name
-          );
-
-          /*
-           * -------------------------------------------
-           * ONLY SEND ONCE
-           * -------------------------------------------
-           */
-
-          if (
-            !notifiedBins.current[
-              bin.bin_id
-            ]
-          ) {
-
-            console.log(
-              'SENDING NOTIFICATION:',
-              bin.name
-            );
-
-            /*
-             * Mark as notified BEFORE sending
-             * to prevent duplicate notifications.
-             */
-
-            notifiedBins.current[
-              bin.bin_id
-            ] = true;
-
-            void sendBinNotification(
-              bin
-            );
-
-          } else {
-
-            console.log(
-              'NOTIFICATION ALREADY SENT:',
-              bin.name
-            );
-
-          }
-
-          return;
-        }
-
-        /*
-         * ---------------------------------------------
-         * BIN DROPPED BELOW 90%
-         * ---------------------------------------------
-         *
-         * Reset notification state.
-         *
-         * This allows another notification when
-         * the bin reaches 90% again.
-         *
-         * ---------------------------------------------
-         */
-
-        if (
-          bin.current_level < 90
-        ) {
-
-          notifiedBins.current[
-            bin.bin_id
-          ] = false;
-
-        }
-
-      },
-
-      [
-        sendBinNotification,
-      ]
-    );
 
   /*
    * =====================================================
@@ -363,22 +115,6 @@ export default function Dashboard() {
             fetchedBins
           );
 
-          /*
-           * -------------------------------------------
-           * CHECK EVERY BIN
-           * -------------------------------------------
-           */
-
-          fetchedBins.forEach(
-            (bin) => {
-
-              checkBinNotification(
-                bin
-              );
-
-            }
-          );
-
         } catch (error) {
 
           console.error(
@@ -398,9 +134,7 @@ export default function Dashboard() {
 
       },
 
-      [
-        checkBinNotification,
-      ]
+      []
     );
 
   /*
@@ -551,25 +285,6 @@ export default function Dashboard() {
 
             /*
              * -----------------------------------------
-             * CONVERT UPDATED BIN
-             * -----------------------------------------
-             */
-
-            const updatedBin =
-              payload.new as Bin;
-
-            /*
-             * -----------------------------------------
-             * CHECK NOTIFICATION
-             * -----------------------------------------
-             */
-
-            checkBinNotification(
-              updatedBin
-            );
-
-            /*
-             * -----------------------------------------
              * REFRESH DASHBOARD
              * -----------------------------------------
              */
@@ -707,7 +422,6 @@ export default function Dashboard() {
 
   }, [
     fetchBins,
-    checkBinNotification,
   ]);
 
   /*
@@ -1130,6 +844,7 @@ export default function Dashboard() {
                           {
                             bin.current_level
                           }%
+
                         </Text>
 
                         <Text
