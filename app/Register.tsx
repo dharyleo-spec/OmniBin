@@ -79,6 +79,8 @@ export default function Register() {
           password: password,
 
           options: {
+            emailRedirectTo: 'omnibin://',
+
             data: {
               display_name:
                 displayName.trim(),
