@@ -172,6 +172,20 @@ export default function Notifications() {
         const validNotifications:
           NotificationWithBin[] = [];
 
+        /*
+         * =================================================
+         * PREVENT DUPLICATE NOTIFICATIONS
+         * =================================================
+         *
+         * notificationData is ordered newest first.
+         *
+         * If multiple notification records exist for
+         * the same bin, keep only the newest one.
+         */
+
+        const processedBins =
+          new Set<number>();
+
         for (
           const notification
           of notificationData
@@ -184,6 +198,19 @@ export default function Notifications() {
           if (
             notification.message !==
             'Bin requires collection.'
+          ) {
+            continue;
+          }
+
+          /*
+           * Skip duplicate notification records
+           * for the same bin.
+           */
+
+          if (
+            processedBins.has(
+              notification.bin_id
+            )
           ) {
             continue;
           }
@@ -221,6 +248,18 @@ export default function Notifications() {
           ) {
             continue;
           }
+
+          /*
+           * Mark this bin as already processed.
+           *
+           * Because notifications are ordered
+           * newest first, this keeps the newest
+           * notification for the bin.
+           */
+
+          processedBins.add(
+            notification.bin_id
+          );
 
           validNotifications.push({
             notification,
@@ -327,13 +366,6 @@ export default function Notifications() {
    * =====================================================
    * ALSO LISTEN FOR BIN CHANGES
    * =====================================================
-   *
-   * This is important because the notification
-   * screen hides notifications whenever the current
-   * bin level goes below 90%.
-   *
-   * Therefore, changing the bin level must also
-   * refresh this screen.
    */
 
   useEffect(() => {
@@ -946,8 +978,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#F5F5F5',
   },
 
-  /* SCROLL VIEW */
-
   scrollView: {
     flex: 1,
   },
@@ -956,8 +986,6 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 110,
   },
-
-  /* NOTIFICATION CARD */
 
   notificationCard: {
     backgroundColor: '#FFFFFF',
@@ -1023,8 +1051,6 @@ const styles = StyleSheet.create({
     color: '#888888',
   },
 
-  /* LOADING */
-
   loadingContainer: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -1036,8 +1062,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#777777',
   },
-
-  /* EMPTY */
 
   emptyContainer: {
     alignItems: 'center',
@@ -1069,8 +1093,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
   },
-
-  /* MODAL */
 
   modalOverlay: {
     flex: 1,
@@ -1126,8 +1148,6 @@ const styles = StyleSheet.create({
     color: '#222222',
   },
 
-  /* INFORMATION */
-
   infoRow: {
     paddingVertical: 13,
     borderBottomWidth: 1,
@@ -1154,8 +1174,6 @@ const styles = StyleSheet.create({
     color: '#C62828',
     fontWeight: '700',
   },
-
-  /* CLOSE */
 
   closeButton: {
     height: 50,

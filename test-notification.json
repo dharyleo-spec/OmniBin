@@ -1,0 +1,7 @@
+﻿{
+  "bin_id": 2,
+  "name": "Bin 02",
+  "waste_type": "Non-Biodegradable",
+  "current_level": 99,
+  "location": "CLIRDEC Lower Ground"
+}

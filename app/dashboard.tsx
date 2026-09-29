@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Notifications from 'expo-notifications';
+
 import {
   useCallback,
   useEffect,
@@ -142,47 +143,40 @@ export default function Dashboard() {
            * ---------------------------------------------
            * CREATE LOCAL ANDROID NOTIFICATION
            * ---------------------------------------------
+           *
+           * IMPORTANT:
+           *
+           * channelId belongs inside trigger.
+           * It does NOT belong inside content.
+           *
+           * A 1-second trigger is used so Android
+           * can use the OmniBin notification channel.
+           *
+           * ---------------------------------------------
            */
 
           await Notifications.scheduleNotificationAsync({
-
             content: {
-
-              title:
-                'OmniBin Alert',
-
-              body:
-                `${bin.waste_type} bin has reached ` +
-                `${bin.current_level}%. ` +
-                `Please collect bin now.`,
-
-              sound:
-                'omnibin_alert',
-
+              title: 'OmniBin Alert',
+              body: `${bin.waste_type} bin has reached ${bin.current_level}%. Please collect bin now.`,
+              sound: 'omnibin_alert',
               data: {
-
-                bin_id:
-                  bin.bin_id,
-
-                waste_type:
-                  bin.waste_type,
-
-                level:
-                  bin.current_level,
+                bin_id: bin.bin_id,
+                waste_type: bin.waste_type,
+                level: bin.current_level,
               },
-
             },
 
-            /*
-             * null = send immediately
-             */
-
-            trigger: null,
-
+            trigger: {
+              type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+              seconds: 1,
+              repeats: false,
+              channelId: 'omnibin-alerts',
+            },
           });
 
           console.log(
-            'BIN NOTIFICATION SENT:',
+            'BIN NOTIFICATION SCHEDULED:',
             bin.name
           );
 
@@ -198,6 +192,7 @@ export default function Dashboard() {
           );
 
         }
+
       },
 
       []
@@ -260,7 +255,7 @@ export default function Dashboard() {
               bin.bin_id
             ] = true;
 
-            sendBinNotification(
+            void sendBinNotification(
               bin
             );
 
@@ -281,7 +276,7 @@ export default function Dashboard() {
          * BIN DROPPED BELOW 90%
          * ---------------------------------------------
          *
-         * Reset the notification state.
+         * Reset notification state.
          *
          * This allows another notification when
          * the bin reaches 90% again.
@@ -400,6 +395,7 @@ export default function Dashboard() {
           setRefreshing(false);
 
         }
+
       },
 
       [
@@ -415,7 +411,7 @@ export default function Dashboard() {
 
   useEffect(() => {
 
-    fetchBins();
+    void fetchBins();
 
   }, [
     fetchBins,
@@ -430,6 +426,11 @@ export default function Dashboard() {
   useEffect(() => {
 
     let cancelled = false;
+
+    let realtimeChannel:
+      ReturnType<
+        typeof supabase.channel
+      > | null = null;
 
     const setupRealtime =
       async () => {
@@ -510,6 +511,7 @@ export default function Dashboard() {
          */
 
         channel.on(
+
           'postgres_changes',
 
           {
@@ -521,7 +523,6 @@ export default function Dashboard() {
 
             table:
               'bins',
-
           },
 
           (payload) => {
@@ -573,9 +574,10 @@ export default function Dashboard() {
              * -----------------------------------------
              */
 
-            fetchBins();
+            void fetchBins();
 
           }
+
         );
 
         /*
@@ -592,12 +594,6 @@ export default function Dashboard() {
               status
             );
 
-            /*
-             * -----------------------------------------
-             * CONNECTED
-             * -----------------------------------------
-             */
-
             if (
               status ===
               'SUBSCRIBED'
@@ -608,12 +604,6 @@ export default function Dashboard() {
               );
 
             }
-
-            /*
-             * -----------------------------------------
-             * ERROR
-             * -----------------------------------------
-             */
 
             if (
               status ===
@@ -626,12 +616,6 @@ export default function Dashboard() {
 
             }
 
-            /*
-             * -----------------------------------------
-             * TIMEOUT
-             * -----------------------------------------
-             */
-
             if (
               status ===
               'TIMED_OUT'
@@ -642,12 +626,6 @@ export default function Dashboard() {
               );
 
             }
-
-            /*
-             * -----------------------------------------
-             * CLOSED
-             * -----------------------------------------
-             */
 
             if (
               status ===
@@ -673,12 +651,7 @@ export default function Dashboard() {
      * =================================================
      */
 
-    let realtimeChannel:
-      ReturnType<
-        typeof supabase.channel
-      > | null = null;
-
-    setupRealtime()
+    void setupRealtime()
       .then(
         (channel) => {
 
@@ -694,7 +667,7 @@ export default function Dashboard() {
             channel
           ) {
 
-            supabase.removeChannel(
+            void supabase.removeChannel(
               channel
             );
 
@@ -721,7 +694,7 @@ export default function Dashboard() {
           'REMOVING BIN REALTIME CHANNEL...'
         );
 
-        supabase.removeChannel(
+        void supabase.removeChannel(
           realtimeChannel
         );
 
@@ -750,7 +723,7 @@ export default function Dashboard() {
         true
       );
 
-      fetchBins();
+      void fetchBins();
 
     };
 

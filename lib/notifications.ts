@@ -4,19 +4,53 @@ import { Platform } from 'react-native';
 
 import { supabase } from './supabase';
 
+/*
+ * =====================================================
+ * CONSTANTS
+ * =====================================================
+ */
+
+const NOTIFICATION_CHANNEL_ID =
+  'omnibin-alerts';
+
+/*
+ * =====================================================
+ * REGISTER PUSH NOTIFICATIONS
+ * =====================================================
+ */
+
 export async function registerForPushNotifications() {
+
   try {
+
+    console.log(
+      '================================='
+    );
+
+    console.log(
+      'STARTING PUSH NOTIFICATION SETUP'
+    );
+
+    console.log(
+      '================================='
+    );
+
     /*
-     * =====================================================
+     * =================================================
      * ANDROID NOTIFICATION CHANNEL
-     * =====================================================
+     * =================================================
      */
 
-    if (Platform.OS === 'android') {
+    if (
+      Platform.OS === 'android'
+    ) {
+
       await Notifications.setNotificationChannelAsync(
-        'omnibin-alerts',
+        NOTIFICATION_CHANNEL_ID,
         {
-          name: 'OmniBin Alerts',
+
+          name:
+            'OmniBin Alerts',
 
           importance:
             Notifications.AndroidImportance.MAX,
@@ -28,43 +62,59 @@ export async function registerForPushNotifications() {
             250,
           ],
 
-          sound: 'omnibin_alert',
+          sound:
+            'omnibin_alert.wav',
 
-          enableVibrate: true,
+          enableVibrate:
+            true,
 
-          showBadge: true,
+          showBadge:
+            true,
+
         }
       );
 
       console.log(
         'ANDROID NOTIFICATION CHANNEL READY'
       );
+
     }
 
     /*
-     * =====================================================
+     * =================================================
      * CHECK NOTIFICATION PERMISSION
-     * =====================================================
+     * =================================================
      */
 
     const {
-      status: existingStatus,
+      status:
+        existingStatus,
     } =
       await Notifications.getPermissionsAsync();
+
+    console.log(
+      'EXISTING NOTIFICATION PERMISSION:',
+      existingStatus
+    );
 
     let finalStatus =
       existingStatus;
 
     /*
-     * =====================================================
+     * =================================================
      * REQUEST NOTIFICATION PERMISSION
-     * =====================================================
+     * =================================================
      */
 
     if (
       existingStatus !==
       'granted'
     ) {
+
+      console.log(
+        'REQUESTING NOTIFICATION PERMISSION...'
+      );
+
       const {
         status,
       } =
@@ -72,17 +122,26 @@ export async function registerForPushNotifications() {
 
       finalStatus =
         status;
+
     }
+
+    /*
+     * =================================================
+     * PERMISSION DENIED
+     * =================================================
+     */
 
     if (
       finalStatus !==
       'granted'
     ) {
+
       console.log(
         'PUSH NOTIFICATION PERMISSION DENIED'
       );
 
       return null;
+
     }
 
     console.log(
@@ -90,9 +149,9 @@ export async function registerForPushNotifications() {
     );
 
     /*
-     * =====================================================
+     * =================================================
      * GET EXPO PROJECT ID
-     * =====================================================
+     * =================================================
      */
 
     const projectId =
@@ -100,12 +159,16 @@ export async function registerForPushNotifications() {
         ?.projectId ??
       Constants?.easConfig?.projectId;
 
-    if (!projectId) {
+    if (
+      !projectId
+    ) {
+
       console.error(
         'EXPO PROJECT ID NOT FOUND'
       );
 
       return null;
+
     }
 
     console.log(
@@ -114,9 +177,9 @@ export async function registerForPushNotifications() {
     );
 
     /*
-     * =====================================================
+     * =================================================
      * GET EXPO PUSH TOKEN
-     * =====================================================
+     * =================================================
      */
 
     const token =
@@ -133,7 +196,10 @@ export async function registerForPushNotifications() {
     );
 
     console.log(
-      'EXPO PUSH TOKEN:',
+      'EXPO PUSH TOKEN:'
+    );
+
+    console.log(
       token
     );
 
@@ -142,34 +208,52 @@ export async function registerForPushNotifications() {
     );
 
     /*
-     * =====================================================
+     * =================================================
      * GET CURRENT USER
-     * =====================================================
+     * =================================================
      */
 
     const {
       data: {
         user,
       },
-      error: userError,
+      error:
+        userError,
     } =
       await supabase.auth.getUser();
 
-    if (userError) {
+    if (
+      userError
+    ) {
+
       console.error(
         'USER ERROR:',
         userError.message
       );
 
+      /*
+       * Token was successfully generated,
+       * so return it even if the user lookup fails.
+       */
+
       return token;
+
     }
 
-    if (!user) {
+    if (
+      !user
+    ) {
+
       console.log(
         'NO LOGGED-IN USER FOUND'
       );
 
+      /*
+       * Token was successfully generated.
+       */
+
       return token;
+
     }
 
     console.log(
@@ -178,46 +262,69 @@ export async function registerForPushNotifications() {
     );
 
     /*
-     * =====================================================
+     * =================================================
      * SAVE TOKEN TO SUPABASE
-     * =====================================================
+     * =================================================
      */
 
     const {
       error,
-    } = await supabase
-      .from('push_tokens')
-      .upsert(
-        {
-          user_id:
-            user.id,
+    } =
+      await supabase
+        .from('push_tokens')
+        .upsert(
 
-          expo_push_token:
-            token,
+          {
 
-          updated_at:
-            new Date().toISOString(),
-        },
-        {
-          onConflict:
-            'expo_push_token',
-        }
-      );
+            user_id:
+              user.id,
 
-    if (error) {
+            expo_push_token:
+              token,
+
+            updated_at:
+              new Date()
+                .toISOString(),
+
+          },
+
+          {
+
+            onConflict:
+              'expo_push_token',
+
+          }
+
+        );
+
+    if (
+      error
+    ) {
+
       console.error(
         'ERROR SAVING PUSH TOKEN:',
         error.message
       );
+
     } else {
+
       console.log(
         'PUSH TOKEN SAVED SUCCESSFULLY'
       );
+
     }
+
+    /*
+     * =================================================
+     * RETURN TOKEN
+     * =================================================
+     */
 
     return token;
 
-  } catch (error) {
+  } catch (
+    error
+  ) {
 
     console.error(
       'PUSH NOTIFICATION REGISTRATION ERROR:',
@@ -225,5 +332,7 @@ export async function registerForPushNotifications() {
     );
 
     return null;
+
   }
+
 }
