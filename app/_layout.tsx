@@ -417,10 +417,6 @@ const pushRegisteredForUser =
     >
 
       <Stack.Screen
-        name="(tabs)"
-      />
-
-      <Stack.Screen
         name="Register"
       />
 
