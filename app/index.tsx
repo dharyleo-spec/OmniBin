@@ -149,6 +149,25 @@ export default function HomeScreen() {
 
         </View>
 
+        {/* FORGOT PASSWORD */}
+        <View style={styles.forgotContainer}>
+
+          <TouchableOpacity
+            onPress={() =>
+              router.push('/forgot-password')
+            }
+            disabled={loading}
+            activeOpacity={0.7}
+          >
+
+            <Text style={styles.forgotLink}>
+              Forgot Password?
+            </Text>
+
+          </TouchableOpacity>
+
+        </View>
+
         {/* ERROR MESSAGE */}
         {errorMessage ? (
           <View style={styles.errorBox}>
@@ -322,6 +341,26 @@ const styles = StyleSheet.create({
     color: '#222222',
 
     backgroundColor: '#FAFCFA',
+  },
+
+  // --------------------------------------------------
+  // FORGOT PASSWORD
+  // --------------------------------------------------
+
+  forgotContainer: {
+    alignItems: 'flex-end',
+
+    marginTop: -8,
+
+    marginBottom: 15,
+  },
+
+  forgotLink: {
+    fontSize: 13,
+
+    fontWeight: '600',
+
+    color: '#1B5E20',
   },
 
   // --------------------------------------------------

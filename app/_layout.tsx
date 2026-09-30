@@ -21,6 +21,7 @@ import * as Notifications from 'expo-notifications';
 import {
   registerForPushNotifications,
 } from '../lib/notifications';
+
 import { supabase } from '../lib/supabase';
 
 /*
@@ -67,63 +68,64 @@ export default function RootLayout() {
 
     let mounted = true;
 
-    const initializeAuth = async () => {
+    const initializeAuth =
+      async () => {
 
-      try {
+        try {
 
-        const {
-          data,
-          error,
-        } =
-          await supabase.auth.getSession();
+          const {
+            data,
+            error,
+          } =
+            await supabase.auth.getSession();
 
-        if (!mounted) {
-          return;
-        }
+          if (!mounted) {
+            return;
+          }
 
-        if (error) {
+          if (error) {
 
-          console.error(
-            'AUTH SESSION ERROR:',
-            error.message
+            console.error(
+              'AUTH SESSION ERROR:',
+              error.message
+            );
+
+            setSession(null);
+
+            return;
+          }
+
+          console.log(
+            'EXISTING SESSION:',
+            data.session
+              ? 'FOUND'
+              : 'NONE'
           );
 
-          setSession(null);
+          setSession(
+            data.session
+          );
 
-          return;
+        } catch (error) {
+
+          console.error(
+            'AUTH INITIALIZATION ERROR:',
+            error
+          );
+
+          if (mounted) {
+            setSession(null);
+          }
+
+        } finally {
+
+          if (mounted) {
+            setLoading(false);
+          }
+
         }
 
-        console.log(
-          'EXISTING SESSION:',
-          data.session
-            ? 'FOUND'
-            : 'NONE'
-        );
-
-        setSession(
-          data.session
-        );
-
-      } catch (error) {
-
-        console.error(
-          'AUTH INITIALIZATION ERROR:',
-          error
-        );
-
-        if (mounted) {
-          setSession(null);
-        }
-
-      } finally {
-
-        if (mounted) {
-          setLoading(false);
-        }
-
-      }
-
-    };
+      };
 
     initializeAuth();
 
@@ -320,27 +322,22 @@ export default function RootLayout() {
 
     /*
      * ===================================================
-     * GET CURRENT ROUTE
+     * CURRENT ROUTE
+     * ===================================================
+     *
+     * Cast to string so TypeScript also accepts the
+     * Forgot Password and Reset Password routes.
+     *
      * ===================================================
      */
 
     const firstSegment =
-      segments[0];
+      segments[0] as string | undefined;
 
 
     /*
      * ===================================================
-     * AUTHENTICATION PAGES
-     * ===================================================
-     *
-     * These pages must remain accessible without
-     * an active Supabase session.
-     *
-     * /              = Login
-     * /Register      = Register
-     * /forgot-password = Forgot Password
-     * /reset-password  = Reset Password
-     *
+     * AUTH PAGES
      * ===================================================
      */
 
@@ -359,6 +356,7 @@ export default function RootLayout() {
       firstSegment ===
       'reset-password';
 
+
     const isAuthPage =
       isLoginPage ||
       isRegisterPage ||
@@ -371,10 +369,12 @@ export default function RootLayout() {
      * NO SESSION
      * ===================================================
      *
-     * Allow login, register, forgot password, and
-     * reset password pages without a session.
+     * Allow users without a session to access:
      *
-     * All other pages require authentication.
+     * Login
+     * Register
+     * Forgot Password
+     * Reset Password
      *
      * ===================================================
      */
@@ -424,6 +424,7 @@ export default function RootLayout() {
   if (loading) {
 
     return (
+
       <View
         style={
           styles.loadingScreen
@@ -436,6 +437,7 @@ export default function RootLayout() {
         />
 
       </View>
+
     );
 
   }
@@ -448,6 +450,7 @@ export default function RootLayout() {
    */
 
   return (
+
     <Stack
       screenOptions={{
         headerShown: false,
@@ -480,6 +483,7 @@ export default function RootLayout() {
       />
 
     </Stack>
+
   );
 
 }
@@ -496,11 +500,15 @@ const styles =
 
     loadingScreen: {
       flex: 1,
+
       backgroundColor:
         '#F5F7F5',
 
       alignItems: 'center',
-      justifyContent: 'center',
+
+      justifyContent:
+        'center',
+
     },
 
   });
