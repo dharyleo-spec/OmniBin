@@ -602,7 +602,7 @@ export default function Dashboard() {
 
           <Header
             title="OmniBin"
-            subtitle="Smart Waste Management System"
+            subtitle="Smart Bin Monitoring System"
           />
 
           {/* WELCOME */}

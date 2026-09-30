@@ -98,7 +98,7 @@ export default function HomeScreen() {
           />
 
           <Text style={styles.subtitle}>
-            Smart Waste Management System
+            Smart Bin Monitoring System
           </Text>
 
         </View>
