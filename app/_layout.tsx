@@ -1,6 +1,7 @@
 import {
   Stack,
   router,
+  useSegments,
 } from 'expo-router';
 
 import {
@@ -43,14 +44,17 @@ Notifications.setNotificationHandler({
 
 export default function RootLayout() {
 
+  const segments =
+    useSegments();
+
   const [session, setSession] =
     useState<any>(null);
 
   const [loading, setLoading] =
     useState(true);
 
-const pushRegisteredForUser =
-  useRef<string | null>(null);
+  const pushRegisteredForUser =
+    useRef<string | null>(null);
 
 
   /*
@@ -200,156 +204,215 @@ const pushRegisteredForUser =
    * Dashboard, Notifications, or Profile.
    */
 
-    useEffect(() => {
+  useEffect(() => {
 
-      if (!session) {
+    if (!session) {
+
+      console.log(
+        'PUSH REGISTRATION SKIPPED: No session'
+      );
+
+      return;
+
+    }
+
+    const userId =
+      session.user?.id;
+
+    if (!userId) {
+
+      console.log(
+        'PUSH REGISTRATION SKIPPED: No user ID'
+      );
+
+      return;
+
+    }
+
+    if (
+      pushRegisteredForUser.current ===
+      userId
+    ) {
+
+      console.log(
+        'PUSH REGISTRATION ALREADY COMPLETED FOR USER'
+      );
+
+      return;
+
+    }
+
+    pushRegisteredForUser.current =
+      userId;
+
+    const registerPush =
+      async () => {
 
         console.log(
-          'PUSH REGISTRATION SKIPPED: No session'
+          '================================='
         );
-
-        return;
-
-      }
-
-      const userId =
-        session.user?.id;
-
-      if (!userId) {
 
         console.log(
-          'PUSH REGISTRATION SKIPPED: No user ID'
+          'REGISTERING PUSH NOTIFICATIONS...'
         );
-
-        return;
-
-      }
-
-      if (
-        pushRegisteredForUser.current ===
-        userId
-      ) {
 
         console.log(
-          'PUSH REGISTRATION ALREADY COMPLETED FOR USER'
+          'USER:',
+          session.user?.email
         );
 
-        return;
+        console.log(
+          '================================='
+        );
 
-      }
+        const token =
+          await registerForPushNotifications();
 
-      pushRegisteredForUser.current =
-        userId;
-
-      const registerPush =
-        async () => {
+        if (token) {
 
           console.log(
             '================================='
           );
 
           console.log(
-            'REGISTERING PUSH NOTIFICATIONS...'
+            'PUSH NOTIFICATIONS READY'
           );
 
           console.log(
-            'USER:',
-            session.user?.email
+            'TOKEN:',
+            token
           );
 
           console.log(
             '================================='
           );
 
-          const token =
-            await registerForPushNotifications();
+        } else {
 
-          if (token) {
+          console.error(
+            'PUSH NOTIFICATION REGISTRATION FAILED'
+          );
 
-            console.log(
-              '================================='
-            );
+          pushRegisteredForUser.current =
+            null;
 
-            console.log(
-              'PUSH NOTIFICATIONS READY'
-            );
+        }
 
-            console.log(
-              'TOKEN:',
-              token
-            );
+      };
 
-            console.log(
-              '================================='
-            );
+    void registerPush();
 
-          } else {
+  }, [session]);
 
-            console.error(
-              'PUSH NOTIFICATION REGISTRATION FAILED'
-            );
-
-            pushRegisteredForUser.current =
-              null;
-
-          }
-
-        };
-
-      void registerPush();
-
-    }, [session]);
-
-
-/*
- * =====================================================
- * ROUTE PROTECTION
- * =====================================================
- */
-
-useEffect(() => {
-
-  if (loading) {
-    return;
-  }
 
   /*
-   * ===================================================
-   * NO SESSION
-   * ===================================================
-   *
-   * Send unauthenticated users to the login page.
-   *
-   * ===================================================
+   * =====================================================
+   * ROUTE PROTECTION
+   * =====================================================
    */
 
-  if (!session) {
+  useEffect(() => {
 
-    router.replace('/');
+    if (loading) {
+      return;
+    }
 
-    return;
-  }
 
-  /*
-   * ===================================================
-   * SESSION EXISTS
-   * ===================================================
-   *
-   * Do not redirect.
-   *
-   * The user can stay on:
-   *
-   * Dashboard
-   * Notifications
-   * Profile
-   *
-   * ===================================================
-   */
+    /*
+     * ===================================================
+     * GET CURRENT ROUTE
+     * ===================================================
+     */
 
-}, [
-  session,
-  loading,
-]);
+    const firstSegment =
+      segments[0];
+
+
+    /*
+     * ===================================================
+     * AUTHENTICATION PAGES
+     * ===================================================
+     *
+     * These pages must remain accessible without
+     * an active Supabase session.
+     *
+     * /              = Login
+     * /Register      = Register
+     * /forgot-password = Forgot Password
+     * /reset-password  = Reset Password
+     *
+     * ===================================================
+     */
+
+    const isLoginPage =
+      firstSegment === undefined;
+
+    const isRegisterPage =
+      firstSegment ===
+      'Register';
+
+    const isForgotPasswordPage =
+      firstSegment ===
+      'forgot-password';
+
+    const isResetPasswordPage =
+      firstSegment ===
+      'reset-password';
+
+    const isAuthPage =
+      isLoginPage ||
+      isRegisterPage ||
+      isForgotPasswordPage ||
+      isResetPasswordPage;
+
+
+    /*
+     * ===================================================
+     * NO SESSION
+     * ===================================================
+     *
+     * Allow login, register, forgot password, and
+     * reset password pages without a session.
+     *
+     * All other pages require authentication.
+     *
+     * ===================================================
+     */
+
+    if (
+      !session &&
+      !isAuthPage
+    ) {
+
+      router.replace(
+        '/'
+      );
+
+      return;
+    }
+
+
+    /*
+     * ===================================================
+     * SESSION EXISTS
+     * ===================================================
+     *
+     * Do not redirect.
+     *
+     * The user can stay on:
+     *
+     * Dashboard
+     * Notifications
+     * Profile
+     *
+     * ===================================================
+     */
+
+  }, [
+    session,
+    loading,
+    segments,
+  ]);
 
 
   /*
@@ -394,6 +457,14 @@ useEffect(() => {
 
       <Stack.Screen
         name="Register"
+      />
+
+      <Stack.Screen
+        name="forgot-password"
+      />
+
+      <Stack.Screen
+        name="reset-password"
       />
 
       <Stack.Screen
