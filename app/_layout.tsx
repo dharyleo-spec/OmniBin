@@ -1,12 +1,10 @@
 import {
   Stack,
   router,
-  useSegments,
 } from 'expo-router';
 
 import {
   useEffect,
-  useRef,
   useState,
 } from 'react';
 
@@ -16,37 +14,11 @@ import {
   View,
 } from 'react-native';
 
-import * as Notifications from 'expo-notifications';
-
-import {
-  registerForPushNotifications,
-} from '../lib/notifications';
+import * as Linking from 'expo-linking';
 
 import { supabase } from '../lib/supabase';
 
-/*
- * =====================================================
- * PUSH NOTIFICATION HANDLER
- * =====================================================
- *
- * This makes notifications appear even when the app
- * is currently open in the foreground.
- */
-
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
-});
-
-
 export default function RootLayout() {
-
-  const segments =
-    useSegments();
 
   const [session, setSession] =
     useState<any>(null);
@@ -54,8 +26,245 @@ export default function RootLayout() {
   const [loading, setLoading] =
     useState(true);
 
-  const pushRegisteredForUser =
-    useRef<string | null>(null);
+  const [recoveringPassword, setRecoveringPassword] =
+    useState(false);
+
+
+  /*
+   * =====================================================
+   * PASSWORD RECOVERY
+   * =====================================================
+   *
+   * When the user clicks the password reset email,
+   * Supabase sends the access token and refresh token
+   * back to:
+   *
+   * omnibin://reset-password
+   *
+   * We use those tokens to create a Supabase session.
+   */
+
+  useEffect(() => {
+
+    let mounted = true;
+
+    const handleRecoveryUrl =
+      async (url: string) => {
+
+        try {
+
+          console.log(
+            'PASSWORD RECOVERY URL:',
+            url
+          );
+
+
+          /*
+           * Supabase places the tokens in the URL.
+           *
+           * Example:
+           *
+           * omnibin://reset-password#access_token=...
+           * &refresh_token=...
+           * &type=recovery
+           */
+
+          const hash =
+            url.split('#')[1];
+
+          if (!hash) {
+            return;
+          }
+
+          const params =
+            new URLSearchParams(hash);
+
+          const accessToken =
+            params.get('access_token');
+
+          const refreshToken =
+            params.get('refresh_token');
+
+          const type =
+            params.get('type');
+
+
+          /*
+           * Only continue if this is
+           * a password recovery link.
+           */
+
+          if (
+            type !== 'recovery' ||
+            !accessToken ||
+            !refreshToken
+          ) {
+
+            return;
+
+          }
+
+
+          console.log(
+            'PASSWORD RECOVERY DETECTED'
+          );
+
+
+          if (mounted) {
+
+            setRecoveringPassword(true);
+
+          }
+
+
+          /*
+           * Create Supabase session
+           */
+
+          const {
+            data,
+            error,
+          } =
+            await supabase.auth.setSession({
+
+              access_token:
+                accessToken,
+
+              refresh_token:
+                refreshToken,
+
+            });
+
+
+          if (error) {
+
+            console.error(
+              'PASSWORD RECOVERY SESSION ERROR:',
+              error.message
+            );
+
+            if (mounted) {
+
+              setRecoveringPassword(
+                false
+              );
+
+            }
+
+            return;
+
+          }
+
+
+          console.log(
+            'PASSWORD RECOVERY SESSION CREATED:',
+            data.session
+              ? 'YES'
+              : 'NO'
+          );
+
+
+          if (mounted) {
+
+            setSession(
+              data.session
+            );
+
+          }
+
+
+          /*
+           * Open the reset password screen.
+           */
+
+          router.replace(
+            '/reset-password'
+          );
+
+
+        } catch (error) {
+
+          console.error(
+            'PASSWORD RECOVERY ERROR:',
+            error
+          );
+
+          if (mounted) {
+
+            setRecoveringPassword(
+              false
+            );
+
+          }
+
+        }
+
+      };
+
+
+    /*
+     * ===================================================
+     * HANDLE INITIAL URL
+     * ===================================================
+     *
+     * This handles the case where the app is CLOSED
+     * and the user clicks the reset email.
+     */
+
+    const handleInitialUrl =
+      async () => {
+
+        const url =
+          await Linking.getInitialURL();
+
+        if (url) {
+
+          await handleRecoveryUrl(
+            url
+          );
+
+        }
+
+      };
+
+
+    void handleInitialUrl();
+
+
+    /*
+     * ===================================================
+     * HANDLE URL WHILE APP IS OPEN
+     * ===================================================
+     */
+
+    const subscription =
+      Linking.addEventListener(
+        'url',
+        ({ url }) => {
+
+          void handleRecoveryUrl(
+            url
+          );
+
+        }
+      );
+
+
+    /*
+     * ===================================================
+     * CLEANUP
+     * ===================================================
+     */
+
+    return () => {
+
+      mounted = false;
+
+      subscription.remove();
+
+    };
+
+  }, []);
 
 
   /*
@@ -68,64 +277,75 @@ export default function RootLayout() {
 
     let mounted = true;
 
-    const initializeAuth =
-      async () => {
+    const initializeAuth = async () => {
 
-        try {
+      try {
 
-          const {
-            data,
-            error,
-          } =
-            await supabase.auth.getSession();
+        const {
+          data,
+          error,
+        } =
+          await supabase.auth.getSession();
 
-          if (!mounted) {
-            return;
-          }
 
-          if (error) {
+        if (!mounted) {
+          return;
+        }
 
-            console.error(
-              'AUTH SESSION ERROR:',
-              error.message
-            );
 
-            setSession(null);
-
-            return;
-          }
-
-          console.log(
-            'EXISTING SESSION:',
-            data.session
-              ? 'FOUND'
-              : 'NONE'
-          );
-
-          setSession(
-            data.session
-          );
-
-        } catch (error) {
+        if (error) {
 
           console.error(
-            'AUTH INITIALIZATION ERROR:',
-            error
+            'AUTH SESSION ERROR:',
+            error.message
           );
 
-          if (mounted) {
-            setSession(null);
-          }
+          setSession(null);
 
-        } finally {
-
-          if (mounted) {
-            setLoading(false);
-          }
+          return;
 
         }
 
-      };
+
+        console.log(
+          'EXISTING SESSION:',
+          data.session
+            ? 'FOUND'
+            : 'NONE'
+        );
+
+
+        setSession(
+          data.session
+        );
+
+
+      } catch (error) {
+
+        console.error(
+          'AUTH INITIALIZATION ERROR:',
+          error
+        );
+
+        if (mounted) {
+
+          setSession(null);
+
+        }
+
+
+      } finally {
+
+        if (mounted) {
+
+          setLoading(false);
+
+        }
+
+      }
+
+    };
+
 
     initializeAuth();
 
@@ -149,9 +369,11 @@ export default function RootLayout() {
             event
           );
 
+
           if (!mounted) {
             return;
           }
+
 
           setSession(
             newSession
@@ -169,6 +391,32 @@ export default function RootLayout() {
 
             router.replace(
               '/'
+            );
+
+          }
+
+
+          /*
+           * PASSWORD RECOVERY
+           */
+
+          if (
+            event ===
+            'PASSWORD_RECOVERY'
+          ) {
+
+            console.log(
+              'PASSWORD RECOVERY EVENT DETECTED'
+            );
+
+
+            setRecoveringPassword(
+              true
+            );
+
+
+            router.replace(
+              '/reset-password'
             );
 
           }
@@ -196,119 +444,6 @@ export default function RootLayout() {
 
   /*
    * =====================================================
-   * REGISTER PUSH NOTIFICATIONS
-   * =====================================================
-   *
-   * This runs whenever a valid user session exists.
-   *
-   * IMPORTANT:
-   * You do NOT need to put this code inside
-   * Dashboard, Notifications, or Profile.
-   */
-
-  useEffect(() => {
-
-    if (!session) {
-
-      console.log(
-        'PUSH REGISTRATION SKIPPED: No session'
-      );
-
-      return;
-
-    }
-
-    const userId =
-      session.user?.id;
-
-    if (!userId) {
-
-      console.log(
-        'PUSH REGISTRATION SKIPPED: No user ID'
-      );
-
-      return;
-
-    }
-
-    if (
-      pushRegisteredForUser.current ===
-      userId
-    ) {
-
-      console.log(
-        'PUSH REGISTRATION ALREADY COMPLETED FOR USER'
-      );
-
-      return;
-
-    }
-
-    pushRegisteredForUser.current =
-      userId;
-
-    const registerPush =
-      async () => {
-
-        console.log(
-          '================================='
-        );
-
-        console.log(
-          'REGISTERING PUSH NOTIFICATIONS...'
-        );
-
-        console.log(
-          'USER:',
-          session.user?.email
-        );
-
-        console.log(
-          '================================='
-        );
-
-        const token =
-          await registerForPushNotifications();
-
-        if (token) {
-
-          console.log(
-            '================================='
-          );
-
-          console.log(
-            'PUSH NOTIFICATIONS READY'
-          );
-
-          console.log(
-            'TOKEN:',
-            token
-          );
-
-          console.log(
-            '================================='
-          );
-
-        } else {
-
-          console.error(
-            'PUSH NOTIFICATION REGISTRATION FAILED'
-          );
-
-          pushRegisteredForUser.current =
-            null;
-
-        }
-
-      };
-
-    void registerPush();
-
-  }, [session]);
-
-
-  /*
-   * =====================================================
    * ROUTE PROTECTION
    * =====================================================
    */
@@ -316,52 +451,22 @@ export default function RootLayout() {
   useEffect(() => {
 
     if (loading) {
+
       return;
+
     }
 
 
     /*
-     * ===================================================
-     * CURRENT ROUTE
-     * ===================================================
-     *
-     * Cast to string so TypeScript also accepts the
-     * Forgot Password and Reset Password routes.
-     *
-     * ===================================================
+     * Do not redirect while processing
+     * a password recovery link.
      */
 
-    const firstSegment =
-      segments[0] as string | undefined;
+    if (recoveringPassword) {
 
+      return;
 
-    /*
-     * ===================================================
-     * AUTH PAGES
-     * ===================================================
-     */
-
-    const isLoginPage =
-      firstSegment === undefined;
-
-    const isRegisterPage =
-      firstSegment ===
-      'Register';
-
-    const isForgotPasswordPage =
-      firstSegment ===
-      'forgot-password';
-
-    const isResetPasswordPage =
-      firstSegment ===
-      'reset-password';
-
-
-    const isAuthPage =
-      isLoginPage ||
-      isRegisterPage ||
-      isForgotPasswordPage ||
-      isResetPasswordPage;
+    }
 
 
     /*
@@ -369,26 +474,17 @@ export default function RootLayout() {
      * NO SESSION
      * ===================================================
      *
-     * Allow users without a session to access:
-     *
-     * Login
-     * Register
-     * Forgot Password
-     * Reset Password
-     *
-     * ===================================================
+     * Send unauthenticated users to the login page.
      */
 
-    if (
-      !session &&
-      !isAuthPage
-    ) {
+    if (!session) {
 
       router.replace(
         '/'
       );
 
       return;
+
     }
 
 
@@ -404,14 +500,12 @@ export default function RootLayout() {
      * Dashboard
      * Notifications
      * Profile
-     *
-     * ===================================================
      */
 
   }, [
     session,
     loading,
-    segments,
+    recoveringPassword,
   ]);
 
 
@@ -421,10 +515,12 @@ export default function RootLayout() {
    * =====================================================
    */
 
-  if (loading) {
+  if (
+    loading ||
+    recoveringPassword
+  ) {
 
     return (
-
       <View
         style={
           styles.loadingScreen
@@ -437,7 +533,6 @@ export default function RootLayout() {
         />
 
       </View>
-
     );
 
   }
@@ -450,13 +545,16 @@ export default function RootLayout() {
    */
 
   return (
-
     <Stack
       screenOptions={{
         headerShown: false,
         animation: 'none',
       }}
     >
+
+      <Stack.Screen
+        name="index"
+      />
 
       <Stack.Screen
         name="Register"
@@ -483,7 +581,6 @@ export default function RootLayout() {
       />
 
     </Stack>
-
   );
 
 }
@@ -499,12 +596,14 @@ const styles =
   StyleSheet.create({
 
     loadingScreen: {
+
       flex: 1,
 
       backgroundColor:
         '#F5F7F5',
 
-      alignItems: 'center',
+      alignItems:
+        'center',
 
       justifyContent:
         'center',

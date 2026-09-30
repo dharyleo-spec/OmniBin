@@ -1,6 +1,5 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
-
 import {
     ActivityIndicator,
     StyleSheet,
@@ -12,245 +11,128 @@ import {
 
 import { supabase } from '../lib/supabase';
 
-export default function ResetPassword() {
-
-  const [password, setPassword] =
-    useState('');
-
+export default function ResetPasswordScreen() {
+  const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] =
     useState('');
 
-  const [loading, setLoading] =
-    useState(false);
-
+  const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] =
     useState('');
-
   const [successMessage, setSuccessMessage] =
     useState('');
 
+  const handleUpdatePassword = async () => {
+    setErrorMessage('');
+    setSuccessMessage('');
 
-  const handleResetPassword =
-    async () => {
+    if (!password || !confirmPassword) {
+      setErrorMessage(
+        'Please enter your new password.'
+      );
+      return;
+    }
 
-      setErrorMessage('');
-      setSuccessMessage('');
+    if (password.length < 6) {
+      setErrorMessage(
+        'Password must be at least 6 characters.'
+      );
+      return;
+    }
 
-      /*
-       * CHECK EMPTY FIELDS
-       */
+    if (password !== confirmPassword) {
+      setErrorMessage(
+        'Passwords do not match.'
+      );
+      return;
+    }
 
-      if (
-        !password ||
-        !confirmPassword
-      ) {
+    setLoading(true);
 
-        setErrorMessage(
-          'Please complete all fields.'
-        );
+    try {
+      const { error } =
+        await supabase.auth.updateUser({
+          password: password,
+        });
 
-        return;
-      }
-
-
-      /*
-       * CHECK PASSWORD MATCH
-       */
-
-      if (
-        password !==
-        confirmPassword
-      ) {
-
-        setErrorMessage(
-          'Passwords do not match.'
-        );
-
-        return;
-      }
-
-
-      /*
-       * CHECK PASSWORD LENGTH
-       */
-
-      if (
-        password.length < 6
-      ) {
-
-        setErrorMessage(
-          'Password must be at least 6 characters.'
-        );
-
-        return;
-      }
-
-
-      setLoading(true);
-
-
-      try {
-
-        /*
-         * UPDATE SUPABASE PASSWORD
-         */
-
-        const {
-          error,
-        } =
-          await supabase.auth.updateUser({
-            password:
-              password,
-          });
-
-
-        if (error) {
-
-          console.error(
-            'PASSWORD RESET ERROR:',
-            error.message
-          );
-
-          setErrorMessage(
-            error.message
-          );
-
-          setLoading(false);
-
-          return;
-        }
-
-
-        /*
-         * SUCCESS
-         */
-
+      if (error) {
         console.log(
-          'PASSWORD RESET SUCCESS'
-        );
-
-        setSuccessMessage(
-          'Password updated successfully.'
-        );
-
-
-        setLoading(false);
-
-
-        /*
-         * RETURN TO LOGIN
-         */
-
-        setTimeout(() => {
-
-          router.replace('/');
-
-        }, 1500);
-
-
-      } catch (error) {
-
-        console.error(
-          'PASSWORD RESET ERROR:',
-          error
+          'PASSWORD UPDATE ERROR:',
+          error.message
         );
 
         setErrorMessage(
-          'Something went wrong. Please try again.'
+          'Unable to update password. Please try again.'
         );
 
         setLoading(false);
-
+        return;
       }
 
-    };
+      console.log(
+        'PASSWORD UPDATED SUCCESSFULLY'
+      );
 
+      setSuccessMessage(
+        'Password updated successfully.'
+      );
+
+      setTimeout(() => {
+        router.replace('/');
+      }, 1500);
+
+    } catch (error) {
+      console.error(
+        'PASSWORD UPDATE ERROR:',
+        error
+      );
+
+      setErrorMessage(
+        'Something went wrong. Please try again.'
+      );
+
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
+    <View style={styles.screen}>
 
-    <View
-      style={
-        styles.screen
-      }
-    >
+      <View style={styles.card}>
 
-      <View
-        style={
-          styles.card
-        }
-      >
+        {/* TITLE */}
 
-        {/* HEADER */}
+        <Text style={styles.title}>
+          Reset Password
+        </Text>
 
-        <View
-          style={
-            styles.header
-          }
-        >
-
-          <Text
-            style={
-              styles.title
-            }
-          >
-            Reset Password
-          </Text>
-
-          <Text
-            style={
-              styles.subtitle
-            }
-          >
-            Enter your new password
-          </Text>
-
-        </View>
+        <Text style={styles.subtitle}>
+          Enter your new password below.
+        </Text>
 
 
-        {/* PASSWORD */}
+        {/* NEW PASSWORD */}
 
-        <View
-          style={
-            styles.inputContainer
-          }
-        >
+        <View style={styles.inputContainer}>
 
-          <Text
-            style={
-              styles.inputLabel
-            }
-          >
+          <Text style={styles.inputLabel}>
             New Password
           </Text>
 
           <TextInput
-            style={
-              styles.input
-            }
-
-            placeholder="Enter new password"
-
+            style={styles.input}
+            placeholder="Enter your new password"
             placeholderTextColor="#999999"
-
-            value={
-              password
-            }
-
+            value={password}
             onChangeText={(text) => {
-
               setPassword(text);
-
               setErrorMessage('');
-
+              setSuccessMessage('');
             }}
-
             secureTextEntry
-
             autoCapitalize="none"
-
-            editable={
-              !loading
-            }
+            editable={!loading}
           />
 
         </View>
@@ -258,48 +140,25 @@ export default function ResetPassword() {
 
         {/* CONFIRM PASSWORD */}
 
-        <View
-          style={
-            styles.inputContainer
-          }
-        >
+        <View style={styles.inputContainer}>
 
-          <Text
-            style={
-              styles.inputLabel
-            }
-          >
+          <Text style={styles.inputLabel}>
             Confirm Password
           </Text>
 
           <TextInput
-            style={
-              styles.input
-            }
-
-            placeholder="Confirm new password"
-
+            style={styles.input}
+            placeholder="Confirm your new password"
             placeholderTextColor="#999999"
-
-            value={
-              confirmPassword
-            }
-
+            value={confirmPassword}
             onChangeText={(text) => {
-
               setConfirmPassword(text);
-
               setErrorMessage('');
-
+              setSuccessMessage('');
             }}
-
             secureTextEntry
-
             autoCapitalize="none"
-
-            editable={
-              !loading
-            }
+            editable={!loading}
           />
 
         </View>
@@ -308,95 +167,47 @@ export default function ResetPassword() {
         {/* ERROR */}
 
         {errorMessage ? (
-
-          <View
-            style={
-              styles.errorBox
-            }
-          >
-
-            <Text
-              style={
-                styles.errorText
-              }
-            >
-              {
-                errorMessage
-              }
+          <View style={styles.errorBox}>
+            <Text style={styles.errorText}>
+              {errorMessage}
             </Text>
-
           </View>
-
         ) : null}
 
 
         {/* SUCCESS */}
 
         {successMessage ? (
-
-          <View
-            style={
-              styles.successBox
-            }
-          >
-
-            <Text
-              style={
-                styles.successText
-              }
-            >
-              {
-                successMessage
-              }
+          <View style={styles.successBox}>
+            <Text style={styles.successText}>
+              {successMessage}
             </Text>
-
           </View>
-
         ) : null}
 
 
-        {/* RESET BUTTON */}
+        {/* UPDATE BUTTON */}
 
         <TouchableOpacity
-
           style={[
-            styles.resetButton,
-
+            styles.button,
             loading &&
-              styles.resetButtonDisabled,
+              styles.buttonDisabled,
           ]}
-
-          onPress={
-            handleResetPassword
-          }
-
-          disabled={
-            loading
-          }
-
-          activeOpacity={
-            0.8
-          }
-
+          onPress={handleUpdatePassword}
+          disabled={loading}
+          activeOpacity={0.8}
         >
 
           {loading ? (
-
             <ActivityIndicator
               size="small"
               color="#FFFFFF"
             />
-
           ) : (
-
-            <Text
-              style={
-                styles.resetButtonText
-              }
-            >
+            <Text style={styles.buttonText}>
               Update Password
             </Text>
-
           )}
 
         </TouchableOpacity>
@@ -405,26 +216,13 @@ export default function ResetPassword() {
         {/* BACK TO LOGIN */}
 
         <TouchableOpacity
-
-          onPress={() =>
-            router.replace('/')
-          }
-
-          disabled={
-            loading
-          }
-
-          style={
-            styles.backButton
-          }
-
+          style={styles.backButton}
+          onPress={() => router.replace('/')}
+          disabled={loading}
+          activeOpacity={0.7}
         >
 
-          <Text
-            style={
-              styles.backText
-            }
-          >
+          <Text style={styles.backText}>
             Back to Login
           </Text>
 
@@ -433,238 +231,203 @@ export default function ResetPassword() {
       </View>
 
     </View>
-
   );
-
 }
 
 
-/*
- * =====================================================
- * STYLES
- * =====================================================
- */
+const styles = StyleSheet.create({
 
-const styles =
-  StyleSheet.create({
+  screen: {
+    flex: 1,
 
-    screen: {
-      flex: 1,
+    backgroundColor: '#F5F7F5',
 
-      backgroundColor:
-        '#F5F7F5',
+    alignItems: 'center',
+    justifyContent: 'center',
 
-      alignItems: 'center',
+    paddingHorizontal: 20,
+  },
 
-      justifyContent:
-        'center',
 
-      paddingHorizontal: 20,
+  card: {
+    width: '100%',
+    maxWidth: 450,
+
+    backgroundColor: '#FFFFFF',
+
+    borderRadius: 20,
+
+    paddingHorizontal: 28,
+    paddingVertical: 35,
+
+    elevation: 4,
+
+    shadowColor: '#000',
+
+    shadowOffset: {
+      width: 0,
+      height: 3,
     },
 
+    shadowOpacity: 0.08,
 
-    card: {
-      width: '100%',
+    shadowRadius: 8,
+  },
 
-      maxWidth: 450,
 
-      backgroundColor:
-        '#FFFFFF',
+  title: {
+    fontSize: 24,
 
-      borderRadius: 20,
+    fontWeight: '700',
 
-      paddingHorizontal: 28,
+    color: '#1B5E20',
 
-      paddingVertical: 35,
+    textAlign: 'center',
 
-      elevation: 4,
+    marginBottom: 8,
+  },
 
-      shadowColor: '#000',
 
-      shadowOffset: {
-        width: 0,
-        height: 3,
-      },
+  subtitle: {
+    fontSize: 13,
 
-      shadowOpacity: 0.08,
+    color: '#777777',
 
-      shadowRadius: 8,
-    },
+    textAlign: 'center',
 
+    marginBottom: 30,
+  },
 
-    header: {
-      alignItems: 'center',
 
-      marginBottom: 30,
-    },
+  inputContainer: {
+    marginBottom: 18,
+  },
 
 
-    title: {
-      fontSize: 28,
+  inputLabel: {
+    fontSize: 14,
 
-      fontWeight: 'bold',
+    fontWeight: '600',
 
-      color:
-        '#1B5E20',
-    },
+    color: '#333333',
 
+    marginBottom: 7,
+  },
 
-    subtitle: {
-      fontSize: 13,
 
-      color:
-        '#777777',
+  input: {
+    height: 50,
 
-      marginTop: 5,
+    borderWidth: 1,
 
-      textAlign:
-        'center',
-    },
+    borderColor: '#D6DDD6',
 
+    borderRadius: 10,
 
-    inputContainer: {
-      marginBottom: 18,
-    },
+    paddingHorizontal: 15,
 
+    fontSize: 14,
 
-    inputLabel: {
-      fontSize: 14,
+    color: '#222222',
 
-      fontWeight: '600',
+    backgroundColor: '#FAFCFA',
+  },
 
-      color:
-        '#333333',
 
-      marginBottom: 7,
-    },
+  errorBox: {
+    backgroundColor: '#FDECEC',
 
+    borderWidth: 1,
 
-    input: {
-      height: 50,
+    borderColor: '#F5B5B5',
 
-      borderWidth: 1,
+    borderRadius: 8,
 
-      borderColor:
-        '#D6DDD6',
+    paddingVertical: 10,
 
-      borderRadius: 10,
+    paddingHorizontal: 12,
 
-      paddingHorizontal: 15,
+    marginBottom: 15,
+  },
 
-      fontSize: 14,
 
-      color:
-        '#222222',
+  errorText: {
+    color: '#C62828',
 
-      backgroundColor:
-        '#FAFCFA',
-    },
+    fontSize: 13,
 
+    fontWeight: '500',
+  },
 
-    errorBox: {
-      backgroundColor:
-        '#FDECEC',
 
-      borderWidth: 1,
+  successBox: {
+    backgroundColor: '#E8F5E9',
 
-      borderColor:
-        '#F5B5B5',
+    borderWidth: 1,
 
-      borderRadius: 8,
+    borderColor: '#A5D6A7',
 
-      paddingVertical: 10,
+    borderRadius: 8,
 
-      paddingHorizontal: 12,
+    paddingVertical: 10,
 
-      marginBottom: 15,
-    },
+    paddingHorizontal: 12,
 
+    marginBottom: 15,
+  },
 
-    errorText: {
-      color:
-        '#C62828',
 
-      fontSize: 13,
+  successText: {
+    color: '#2E7D32',
 
-      fontWeight: '500',
-    },
+    fontSize: 13,
 
+    fontWeight: '500',
+  },
 
-    successBox: {
-      backgroundColor:
-        '#EAF5E7',
 
-      borderWidth: 1,
+  button: {
+    height: 52,
 
-      borderColor:
-        '#B8D9AE',
+    backgroundColor: '#1B5E20',
 
-      borderRadius: 8,
+    borderRadius: 10,
 
-      paddingVertical: 10,
+    alignItems: 'center',
 
-      paddingHorizontal: 12,
+    justifyContent: 'center',
 
-      marginBottom: 15,
-    },
+    marginTop: 5,
+  },
 
 
-    successText: {
-      color:
-        '#2E6B25',
+  buttonDisabled: {
+    opacity: 0.6,
+  },
 
-      fontSize: 13,
 
-      fontWeight: '500',
-    },
+  buttonText: {
+    color: '#FFFFFF',
 
+    fontSize: 16,
 
-    resetButton: {
-      height: 52,
+    fontWeight: 'bold',
+  },
 
-      backgroundColor:
-        '#1B5E20',
 
-      borderRadius: 10,
+  backButton: {
+    alignItems: 'center',
 
-      alignItems: 'center',
+    marginTop: 18,
+  },
 
-      justifyContent:
-        'center',
 
-      marginTop: 5,
-    },
+  backText: {
+    fontSize: 13,
 
+    fontWeight: '700',
 
-    resetButtonDisabled: {
-      opacity: 0.6,
-    },
+    color: '#1B5E20',
+  },
 
-
-    resetButtonText: {
-      color:
-        '#FFFFFF',
-
-      fontSize: 16,
-
-      fontWeight: 'bold',
-    },
-
-
-    backButton: {
-      alignItems: 'center',
-
-      marginTop: 20,
-    },
-
-
-    backText: {
-      fontSize: 13,
-
-      fontWeight: '700',
-
-      color:
-        '#1B5E20',
-    },
-
-  });
+});
