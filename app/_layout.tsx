@@ -5,6 +5,7 @@ import {
 
 import {
   useEffect,
+  useRef,
   useState,
 } from 'react';
 
@@ -30,19 +31,20 @@ export default function RootLayout() {
   const [recoveringPassword, setRecoveringPassword] =
     useState(false);
 
+  const passwordRecoveryHandled =
+    useRef(false);
+
 
   /*
    * =====================================================
    * PASSWORD RECOVERY
    * =====================================================
    *
-   * When the user clicks the password reset email,
-   * Supabase sends the access token and refresh token
-   * back to:
+   * Handles password reset links.
+   *
+   * Expected link:
    *
    * omnibin://reset-password
-   *
-   * We use those tokens to create a Supabase session.
    */
 
   useEffect(() => {
@@ -61,24 +63,50 @@ export default function RootLayout() {
 
 
           /*
-           * Supabase places the tokens in the URL.
-           *
-           * Example:
-           *
-           * omnibin://reset-password#access_token=...
-           * &refresh_token=...
-           * &type=recovery
+           * Only handle reset-password links.
            */
+
+          if (
+            !url.startsWith(
+              'omnibin://reset-password'
+            )
+          ) {
+
+            return;
+
+          }
+
+
+          /*
+           * Prevent duplicate processing.
+           */
+
+          if (
+            passwordRecoveryHandled.current
+          ) {
+
+            return;
+
+          }
+
 
           const hash =
             url.split('#')[1];
 
           if (!hash) {
+
+            console.log(
+              'PASSWORD RECOVERY: No token data found'
+            );
+
             return;
+
           }
+
 
           const params =
             new URLSearchParams(hash);
+
 
           const accessToken =
             params.get(
@@ -91,12 +119,13 @@ export default function RootLayout() {
             );
 
           const type =
-            params.get('type');
+            params.get(
+              'type'
+            );
 
 
           /*
-           * Only continue if this is
-           * a password recovery link.
+           * Only continue for recovery links.
            */
 
           if (
@@ -110,9 +139,8 @@ export default function RootLayout() {
           }
 
 
-          console.log(
-            'PASSWORD RECOVERY DETECTED'
-          );
+          passwordRecoveryHandled.current =
+            true;
 
 
           if (mounted) {
@@ -124,8 +152,13 @@ export default function RootLayout() {
           }
 
 
+          console.log(
+            'PASSWORD RECOVERY DETECTED'
+          );
+
+
           /*
-           * Create Supabase session
+           * Create Supabase session.
            */
 
           const {
@@ -150,6 +183,9 @@ export default function RootLayout() {
               error.message
             );
 
+            passwordRecoveryHandled.current =
+              false;
+
             if (mounted) {
 
               setRecoveringPassword(
@@ -171,17 +207,20 @@ export default function RootLayout() {
           );
 
 
-          if (mounted) {
+          if (!mounted) {
 
-            setSession(
-              data.session
-            );
+            return;
 
           }
 
 
+          setSession(
+            data.session
+          );
+
+
           /*
-           * Open the reset password screen.
+           * Open reset password page.
            */
 
           router.replace(
@@ -195,6 +234,9 @@ export default function RootLayout() {
             'PASSWORD RECOVERY ERROR:',
             error
           );
+
+          passwordRecoveryHandled.current =
+            false;
 
           if (mounted) {
 
@@ -213,9 +255,6 @@ export default function RootLayout() {
      * ===================================================
      * HANDLE INITIAL URL
      * ===================================================
-     *
-     * This handles the case where the app is CLOSED
-     * and the user clicks the reset email.
      */
 
     const handleInitialUrl =
@@ -224,13 +263,17 @@ export default function RootLayout() {
         const url =
           await Linking.getInitialURL();
 
-        if (url) {
 
-          await handleRecoveryUrl(
-            url
-          );
+        if (!url) {
+
+          return;
 
         }
+
+
+        await handleRecoveryUrl(
+          url
+        );
 
       };
 
@@ -276,283 +319,6 @@ export default function RootLayout() {
 
   /*
    * =====================================================
-   * EMAIL CONFIRMATION CALLBACK
-   * =====================================================
-   *
-   * Handles the link sent after a user registers.
-   *
-   * Redirect:
-   *
-   * omnibin://auth/callback
-   *
-   * Supabase sends the access token and refresh token
-   * in the URL after the email is confirmed.
-   */
-
-  useEffect(() => {
-
-    let mounted = true;
-
-    const handleEmailConfirmation =
-      async (url: string) => {
-
-        try {
-
-          console.log(
-            'EMAIL CONFIRMATION URL:',
-            url
-          );
-
-
-          /*
-           * Only handle the OmniBin
-           * email confirmation callback.
-           */
-
-          if (
-            !url.startsWith(
-              'omnibin://auth/callback'
-            )
-          ) {
-
-            return;
-
-          }
-
-
-          /*
-           * Supabase places the tokens
-           * after the # symbol.
-           *
-           * Example:
-           *
-           * omnibin://auth/callback
-           * #access_token=...
-           * &refresh_token=...
-           * &type=signup
-           */
-
-          const hash =
-            url.split('#')[1];
-
-          if (!hash) {
-
-            console.log(
-              'EMAIL CONFIRMATION: No token data found'
-            );
-
-            return;
-
-          }
-
-
-          const params =
-            new URLSearchParams(hash);
-
-
-          const accessToken =
-            params.get(
-              'access_token'
-            );
-
-          const refreshToken =
-            params.get(
-              'refresh_token'
-            );
-
-          const type =
-            params.get('type');
-
-
-          /*
-           * Only continue for signup confirmation.
-           */
-
-          if (
-            type !== 'signup' ||
-            !accessToken ||
-            !refreshToken
-          ) {
-
-            console.log(
-              'EMAIL CONFIRMATION: Invalid callback data'
-            );
-
-            return;
-
-          }
-
-
-          console.log(
-            'EMAIL CONFIRMATION DETECTED'
-          );
-
-
-          /*
-           * Create the Supabase session.
-           */
-
-          const {
-            data,
-            error,
-          } =
-            await supabase.auth.setSession({
-
-              access_token:
-                accessToken,
-
-              refresh_token:
-                refreshToken,
-
-            });
-
-
-          if (error) {
-
-            console.error(
-              'EMAIL CONFIRMATION SESSION ERROR:',
-              error.message
-            );
-
-            return;
-
-          }
-
-
-          console.log(
-            'EMAIL CONFIRMATION SUCCESS:',
-            data.session
-              ? 'SESSION CREATED'
-              : 'NO SESSION'
-          );
-
-
-          if (!mounted) {
-
-            return;
-
-          }
-
-
-          /*
-           * Save the confirmed session.
-           */
-
-          setSession(
-            data.session
-          );
-
-
-          /*
-           * Send the user to the login page.
-           */
-
-          router.replace('/');
-
-
-        } catch (error) {
-
-          console.error(
-            'EMAIL CONFIRMATION ERROR:',
-            error
-          );
-
-        }
-
-      };
-
-
-    /*
-     * ===================================================
-     * HANDLE APP CLOSED
-     * ===================================================
-     */
-
-    const handleInitialUrl =
-      async () => {
-
-        const url =
-          await Linking.getInitialURL();
-
-        if (!url) {
-
-          return;
-
-        }
-
-
-        /*
-         * Ignore password recovery URLs here.
-         * They are handled by the recovery listener above.
-         */
-
-        if (
-          url.startsWith(
-            'omnibin://reset-password'
-          )
-        ) {
-
-          return;
-
-        }
-
-
-        await handleEmailConfirmation(
-          url
-        );
-
-      };
-
-
-    void handleInitialUrl();
-
-
-    /*
-     * ===================================================
-     * HANDLE URL WHILE APP IS OPEN
-     * ===================================================
-     */
-
-    const subscription =
-      Linking.addEventListener(
-        'url',
-        ({ url }) => {
-
-          if (
-            url.startsWith(
-              'omnibin://auth/callback'
-            )
-          ) {
-
-            void handleEmailConfirmation(
-              url
-            );
-
-          }
-
-        }
-      );
-
-
-    /*
-     * ===================================================
-     * CLEANUP
-     * ===================================================
-     */
-
-    return () => {
-
-      mounted = false;
-
-      subscription.remove();
-
-    };
-
-  }, []);
-
-
-  /*
-   * =====================================================
    * GET EXISTING SESSION
    * =====================================================
    */
@@ -560,6 +326,7 @@ export default function RootLayout() {
   useEffect(() => {
 
     let mounted = true;
+
 
     const initializeAuth =
       async () => {
@@ -613,6 +380,7 @@ export default function RootLayout() {
             'AUTH INITIALIZATION ERROR:',
             error
           );
+
 
           if (mounted) {
 
@@ -747,8 +515,8 @@ export default function RootLayout() {
 
 
     /*
-     * Do not redirect while processing
-     * a password recovery link.
+     * Do not redirect while password recovery
+     * is being processed.
      */
 
     if (recoveringPassword) {
@@ -763,7 +531,7 @@ export default function RootLayout() {
      * NO SESSION
      * ===================================================
      *
-     * Send unauthenticated users to the login page.
+     * Send unauthenticated users to login.
      */
 
     if (!session) {
@@ -784,7 +552,7 @@ export default function RootLayout() {
      *
      * Do not redirect.
      *
-     * The user can stay on:
+     * User can stay on:
      *
      * Dashboard
      * Notifications
