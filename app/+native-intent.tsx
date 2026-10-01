@@ -1,4 +1,3 @@
-
 export function redirectSystemPath({
   path,
   initial,
@@ -11,38 +10,70 @@ export function redirectSystemPath({
     path
   );
 
-  /*
-   * EMAIL CONFIRMATION
-   *
-   * omnibin://auth/callback
-   */
+  try {
+    /*
+     * =====================================================
+     * EMAIL CONFIRMATION
+     * =====================================================
+     *
+     * Supabase may send:
+     *
+     * omnibin://auth/callback
+     *
+     * or:
+     *
+     * omnibin://auth/callback?code=...
+     *
+     * Keep the callback path and its parameters.
+     */
 
-  if (
-    path.startsWith(
-      '/auth/callback'
-    )
-  ) {
+    if (
+      path.includes(
+        '/auth/callback'
+      )
+    ) {
+      return path;
+    }
+
+
+    /*
+     * =====================================================
+     * PASSWORD RESET
+     * =====================================================
+     *
+     * Keep the password reset route
+     * and its parameters.
+     */
+
+    if (
+      path.includes(
+        '/reset-password'
+      )
+    ) {
+      return path;
+    }
+
+
+    /*
+     * =====================================================
+     * EVERYTHING ELSE
+     * =====================================================
+     */
+
+    return path;
+
+  } catch (error) {
+
+    console.error(
+      'NATIVE INTENT ERROR:',
+      error
+    );
+
+    /*
+     * If something unexpected happens,
+     * safely return to the login page.
+     */
+
     return '/';
   }
-
-  /*
-   * PASSWORD RESET
-   *
-   * Keep password recovery working.
-   */
-
-  if (
-    path.startsWith(
-      '/reset-password'
-    )
-  ) {
-    return '/reset-password';
-  }
-
-  /*
-   * Return the original path
-   * for everything else.
-   */
-
-  return path;
 }
