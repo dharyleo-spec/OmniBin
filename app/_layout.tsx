@@ -18,6 +18,7 @@ import * as Linking from 'expo-linking';
 
 import { supabase } from '../lib/supabase';
 
+
 export default function RootLayout() {
 
   const [session, setSession] =
@@ -80,10 +81,14 @@ export default function RootLayout() {
             new URLSearchParams(hash);
 
           const accessToken =
-            params.get('access_token');
+            params.get(
+              'access_token'
+            );
 
           const refreshToken =
-            params.get('refresh_token');
+            params.get(
+              'refresh_token'
+            );
 
           const type =
             params.get('type');
@@ -112,7 +117,9 @@ export default function RootLayout() {
 
           if (mounted) {
 
-            setRecoveringPassword(true);
+            setRecoveringPassword(
+              true
+            );
 
           }
 
@@ -269,6 +276,283 @@ export default function RootLayout() {
 
   /*
    * =====================================================
+   * EMAIL CONFIRMATION CALLBACK
+   * =====================================================
+   *
+   * Handles the link sent after a user registers.
+   *
+   * Redirect:
+   *
+   * omnibin://auth/callback
+   *
+   * Supabase sends the access token and refresh token
+   * in the URL after the email is confirmed.
+   */
+
+  useEffect(() => {
+
+    let mounted = true;
+
+    const handleEmailConfirmation =
+      async (url: string) => {
+
+        try {
+
+          console.log(
+            'EMAIL CONFIRMATION URL:',
+            url
+          );
+
+
+          /*
+           * Only handle the OmniBin
+           * email confirmation callback.
+           */
+
+          if (
+            !url.startsWith(
+              'omnibin://auth/callback'
+            )
+          ) {
+
+            return;
+
+          }
+
+
+          /*
+           * Supabase places the tokens
+           * after the # symbol.
+           *
+           * Example:
+           *
+           * omnibin://auth/callback
+           * #access_token=...
+           * &refresh_token=...
+           * &type=signup
+           */
+
+          const hash =
+            url.split('#')[1];
+
+          if (!hash) {
+
+            console.log(
+              'EMAIL CONFIRMATION: No token data found'
+            );
+
+            return;
+
+          }
+
+
+          const params =
+            new URLSearchParams(hash);
+
+
+          const accessToken =
+            params.get(
+              'access_token'
+            );
+
+          const refreshToken =
+            params.get(
+              'refresh_token'
+            );
+
+          const type =
+            params.get('type');
+
+
+          /*
+           * Only continue for signup confirmation.
+           */
+
+          if (
+            type !== 'signup' ||
+            !accessToken ||
+            !refreshToken
+          ) {
+
+            console.log(
+              'EMAIL CONFIRMATION: Invalid callback data'
+            );
+
+            return;
+
+          }
+
+
+          console.log(
+            'EMAIL CONFIRMATION DETECTED'
+          );
+
+
+          /*
+           * Create the Supabase session.
+           */
+
+          const {
+            data,
+            error,
+          } =
+            await supabase.auth.setSession({
+
+              access_token:
+                accessToken,
+
+              refresh_token:
+                refreshToken,
+
+            });
+
+
+          if (error) {
+
+            console.error(
+              'EMAIL CONFIRMATION SESSION ERROR:',
+              error.message
+            );
+
+            return;
+
+          }
+
+
+          console.log(
+            'EMAIL CONFIRMATION SUCCESS:',
+            data.session
+              ? 'SESSION CREATED'
+              : 'NO SESSION'
+          );
+
+
+          if (!mounted) {
+
+            return;
+
+          }
+
+
+          /*
+           * Save the confirmed session.
+           */
+
+          setSession(
+            data.session
+          );
+
+
+          /*
+           * Send the user to the login page.
+           */
+
+          router.replace('/');
+
+
+        } catch (error) {
+
+          console.error(
+            'EMAIL CONFIRMATION ERROR:',
+            error
+          );
+
+        }
+
+      };
+
+
+    /*
+     * ===================================================
+     * HANDLE APP CLOSED
+     * ===================================================
+     */
+
+    const handleInitialUrl =
+      async () => {
+
+        const url =
+          await Linking.getInitialURL();
+
+        if (!url) {
+
+          return;
+
+        }
+
+
+        /*
+         * Ignore password recovery URLs here.
+         * They are handled by the recovery listener above.
+         */
+
+        if (
+          url.startsWith(
+            'omnibin://reset-password'
+          )
+        ) {
+
+          return;
+
+        }
+
+
+        await handleEmailConfirmation(
+          url
+        );
+
+      };
+
+
+    void handleInitialUrl();
+
+
+    /*
+     * ===================================================
+     * HANDLE URL WHILE APP IS OPEN
+     * ===================================================
+     */
+
+    const subscription =
+      Linking.addEventListener(
+        'url',
+        ({ url }) => {
+
+          if (
+            url.startsWith(
+              'omnibin://auth/callback'
+            )
+          ) {
+
+            void handleEmailConfirmation(
+              url
+            );
+
+          }
+
+        }
+      );
+
+
+    /*
+     * ===================================================
+     * CLEANUP
+     * ===================================================
+     */
+
+    return () => {
+
+      mounted = false;
+
+      subscription.remove();
+
+    };
+
+  }, []);
+
+
+  /*
+   * =====================================================
    * GET EXISTING SESSION
    * =====================================================
    */
@@ -277,74 +561,77 @@ export default function RootLayout() {
 
     let mounted = true;
 
-    const initializeAuth = async () => {
+    const initializeAuth =
+      async () => {
 
-      try {
+        try {
 
-        const {
-          data,
-          error,
-        } =
-          await supabase.auth.getSession();
-
-
-        if (!mounted) {
-          return;
-        }
+          const {
+            data,
+            error,
+          } =
+            await supabase.auth.getSession();
 
 
-        if (error) {
+          if (!mounted) {
 
-          console.error(
-            'AUTH SESSION ERROR:',
-            error.message
+            return;
+
+          }
+
+
+          if (error) {
+
+            console.error(
+              'AUTH SESSION ERROR:',
+              error.message
+            );
+
+            setSession(null);
+
+            return;
+
+          }
+
+
+          console.log(
+            'EXISTING SESSION:',
+            data.session
+              ? 'FOUND'
+              : 'NONE'
           );
 
-          setSession(null);
 
-          return;
-
-        }
-
-
-        console.log(
-          'EXISTING SESSION:',
-          data.session
-            ? 'FOUND'
-            : 'NONE'
-        );
+          setSession(
+            data.session
+          );
 
 
-        setSession(
-          data.session
-        );
+        } catch (error) {
+
+          console.error(
+            'AUTH INITIALIZATION ERROR:',
+            error
+          );
+
+          if (mounted) {
+
+            setSession(null);
+
+          }
 
 
-      } catch (error) {
+        } finally {
 
-        console.error(
-          'AUTH INITIALIZATION ERROR:',
-          error
-        );
+          if (mounted) {
 
-        if (mounted) {
+            setLoading(false);
 
-          setSession(null);
+          }
 
         }
 
-
-      } finally {
-
-        if (mounted) {
-
-          setLoading(false);
-
-        }
-
-      }
-
-    };
+      };
 
 
     initializeAuth();
@@ -371,7 +658,9 @@ export default function RootLayout() {
 
 
           if (!mounted) {
+
             return;
+
           }
 
 
@@ -521,6 +810,7 @@ export default function RootLayout() {
   ) {
 
     return (
+
       <View
         style={
           styles.loadingScreen
@@ -533,6 +823,7 @@ export default function RootLayout() {
         />
 
       </View>
+
     );
 
   }
@@ -545,6 +836,7 @@ export default function RootLayout() {
    */
 
   return (
+
     <Stack
       screenOptions={{
         headerShown: false,
@@ -581,6 +873,7 @@ export default function RootLayout() {
       />
 
     </Stack>
+
   );
 
 }
