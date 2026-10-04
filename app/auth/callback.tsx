@@ -1,18 +1,18 @@
 import {
-    ActivityIndicator,
-    StyleSheet,
-    Text,
-    View,
+  ActivityIndicator,
+  StyleSheet,
+  Text,
+  View,
 } from 'react-native';
 
 import {
-    router,
-    useLocalSearchParams,
+  router,
+  useLocalSearchParams,
 } from 'expo-router';
 
 import {
-    useEffect,
-    useRef,
+  useEffect,
+  useRef,
 } from 'react';
 
 import { supabase } from '../../lib/supabase';

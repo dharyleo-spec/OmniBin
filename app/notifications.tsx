@@ -1,32 +1,32 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from 'expo-router';
+
 import {
   useCallback,
   useEffect,
+  useRef,
   useState,
 } from 'react';
 
 import {
   ActivityIndicator,
-  Modal,
-  Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 
+import BinMonitor from '../components/BinMonitor';
 import BottomNav from '../components/BottomNav';
 import Header from '../components/Header';
 import { supabase } from '../lib/supabase';
 
-type Notification = {
-  notif_id: number;
-  bin_id: number;
-  message: string;
-  is_read: boolean;
-  created_at: string;
-};
+
+/*
+ * =====================================================
+ * BIN TYPE
+ * =====================================================
+ */
 
 type Bin = {
   bin_id: number;
@@ -38,344 +38,477 @@ type Bin = {
   updated_at: string;
 };
 
-type NotificationWithBin = {
-  notification: Notification;
-  bin: Bin;
-};
 
-type IoniconName =
-  keyof typeof Ionicons.glyphMap;
+/*
+ * =====================================================
+ * DASHBOARD
+ * =====================================================
+ */
 
-export default function Notifications() {
-  const [
-    notifications,
-    setNotifications,
-  ] = useState<
-    NotificationWithBin[]
-  >([]);
+export default function Dashboard() {
+
+  const [bins, setBins] =
+    useState<Bin[]>([]);
 
   const [loading, setLoading] =
     useState(true);
 
-  const [
-    selectedNotification,
-    setSelectedNotification,
-  ] =
-    useState<NotificationWithBin | null>(
-      null
-    );
+  const [refreshing, setRefreshing] =
+    useState(false);
+
+  const [monitorReloadKey, setMonitorReloadKey] =
+    useState(0);
+
 
   /*
    * =====================================================
-   * WASTE TYPE ICON
+   * TRACK NOTIFIED BINS
    * =====================================================
+   *
+   * Prevents the same bin from repeatedly creating
+   * notifications while it remains at 90% or higher.
    */
 
-  const getWasteIcon = (
-    wasteType: string
-  ): IoniconName => {
+  const notifiedBins =
+    useRef<Record<number, boolean>>({});
 
-    const type =
-      wasteType.toLowerCase().trim();
-
-    if (
-      type === 'biodegradable'
-    ) {
-      return 'leaf-outline';
-    }
-
-    if (
-      type === 'non-biodegradable'
-    ) {
-      return 'trash-bin-outline';
-    }
-
-    return 'trash-bin-outline';
-  };
 
   /*
    * =====================================================
-   * WASTE TYPE ICON COLOR
+   * CREATE IN-APP NOTIFICATION
    * =====================================================
+   *
+   * This is NOT a push notification.
+   *
+   * It simply creates a record in the Supabase
+   * notification table so it can appear inside
+   * the OmniBin Notifications page.
    */
 
-  const getWasteIconColor = (
-    wasteType: string
-  ) => {
+  const checkBinNotification =
+    useCallback(
+      async (bin: Bin) => {
 
-    const type =
-      wasteType.toLowerCase().trim();
+        const level =
+          Number(
+            bin.current_level
+          ) || 0;
 
-    if (
-      type === 'biodegradable'
-    ) {
-      return '#537B2F';
-    }
-
-    if (
-      type === 'non-biodegradable'
-    ) {
-      return '#777777';
-    }
-
-    return '#537B2F';
-  };
-
-  /*
-   * =====================================================
-   * FETCH NOTIFICATIONS
-   * =====================================================
-   */
-
-  const fetchNotifications =
-    useCallback(async () => {
-
-      try {
-
-        const {
-          data: notificationData,
-          error: notificationError,
-        } = await supabase
-          .from('notification')
-          .select(
-            'notif_id, bin_id, message, is_read, created_at'
-          )
-          .order(
-            'created_at',
-            {
-              ascending: false,
-            }
-          );
-
-        if (notificationError) {
-
-          console.error(
-            'Error fetching notifications:',
-            notificationError.message
-          );
-
-          setNotifications([]);
-
-          return;
-        }
-
-        if (
-          !notificationData ||
-          notificationData.length === 0
-        ) {
-
-          setNotifications([]);
-
-          return;
-        }
-
-        const validNotifications:
-          NotificationWithBin[] = [];
 
         /*
-         * =================================================
-         * PREVENT DUPLICATE NOTIFICATIONS
-         * =================================================
+         * -------------------------------------------------
+         * BIN BELOW 90%
+         * -------------------------------------------------
          *
-         * notificationData is ordered newest first.
-         *
-         * If multiple notification records exist for
-         * the same bin, keep only the newest one.
+         * Reset the trigger so the bin can create another
+         * notification if it reaches 90% again later.
          */
 
-        const processedBins =
-          new Set<number>();
+        if (level < 90) {
 
-        for (
-          const notification
-          of notificationData
-        ) {
+          notifiedBins.current[
+            bin.bin_id
+          ] = false;
 
-          /*
-           * Only collection notifications
-           */
-
-          if (
-            notification.message !==
-            'Bin requires collection.'
-          ) {
-            continue;
-          }
-
-          /*
-           * Skip duplicate notification records
-           * for the same bin.
-           */
-
-          if (
-            processedBins.has(
-              notification.bin_id
-            )
-          ) {
-            continue;
-          }
-
-          const {
-            data: binData,
-            error: binError,
-          } = await supabase
-            .from('bins')
-            .select(
-              'bin_id, name, waste_type, current_level, status, location, updated_at'
-            )
-            .eq(
-              'bin_id',
-              notification.bin_id
-            )
-            .single();
-
-          if (
-            binError ||
-            !binData
-          ) {
-            continue;
-          }
-
-          /*
-           * Only display when
-           * bin is 90% or higher.
-           */
-
-          if (
-            Number(
-              binData.current_level
-            ) < 90
-          ) {
-            continue;
-          }
-
-          /*
-           * Mark this bin as already processed.
-           *
-           * Because notifications are ordered
-           * newest first, this keeps the newest
-           * notification for the bin.
-           */
-
-          processedBins.add(
-            notification.bin_id
-          );
-
-          validNotifications.push({
-            notification,
-            bin: {
-              ...binData,
-              current_level:
-                Number(
-                  binData.current_level
-                ) || 0,
-            },
-          });
+          return;
         }
 
-        setNotifications(
-          validNotifications
-        );
 
-      } catch (error) {
+        /*
+         * -------------------------------------------------
+         * ALREADY NOTIFIED
+         * -------------------------------------------------
+         */
 
-        console.error(
-          'Unexpected notification error:',
-          error
-        );
+        if (
+          notifiedBins.current[
+            bin.bin_id
+          ]
+        ) {
 
-        setNotifications([]);
+          return;
+        }
 
-      } finally {
 
-        setLoading(false);
+        /*
+         * Mark immediately to prevent duplicate inserts
+         * if multiple realtime updates happen quickly.
+         */
 
-      }
+        notifiedBins.current[
+          bin.bin_id
+        ] = true;
 
-    }, []);
+
+        try {
+
+          /*
+           * -------------------------------------------------
+           * CHECK EXISTING LATEST NOTIFICATION
+           * -------------------------------------------------
+           *
+           * This helps prevent duplicate notification records
+           * if the dashboard is reopened while the same bin
+           * is still full.
+           */
+
+          const {
+            data: latestNotification,
+            error: latestNotificationError,
+          } =
+            await supabase
+              .from('notification')
+              .select(
+                'notif_id, created_at'
+              )
+              .eq(
+                'bin_id',
+                bin.bin_id
+              )
+              .eq(
+                'message',
+                'Bin requires collection.'
+              )
+              .order(
+                'created_at',
+                {
+                  ascending: false,
+                }
+              )
+              .limit(1)
+              .maybeSingle();
+
+
+          if (
+            latestNotificationError
+          ) {
+
+            console.error(
+              'ERROR CHECKING EXISTING NOTIFICATION:',
+              latestNotificationError.message
+            );
+
+            /*
+             * Allow another attempt later.
+             */
+
+            notifiedBins.current[
+              bin.bin_id
+            ] = false;
+
+            return;
+          }
+
+
+          /*
+           * -------------------------------------------------
+           * A RECENT NOTIFICATION ALREADY EXISTS
+           * -------------------------------------------------
+           *
+           * If the latest notification was created after
+           * the bin's latest update, there is no need to
+           * create another one.
+           */
+
+          if (
+            latestNotification &&
+            bin.updated_at
+          ) {
+
+            const notificationTime =
+              new Date(
+                latestNotification.created_at
+              ).getTime();
+
+            const binUpdateTime =
+              new Date(
+                bin.updated_at
+              ).getTime();
+
+
+            if (
+              notificationTime >=
+              binUpdateTime
+            ) {
+
+              console.log(
+                'NOTIFICATION ALREADY EXISTS FOR BIN:',
+                bin.bin_id
+              );
+
+              return;
+            }
+          }
+
+
+          /*
+           * -------------------------------------------------
+           * CREATE IN-APP NOTIFICATION
+           * -------------------------------------------------
+           */
+
+          const {
+            error,
+          } =
+            await supabase
+              .from('notification')
+              .insert({
+                bin_id:
+                  bin.bin_id,
+
+                message:
+                  'Bin requires collection.',
+
+                is_read:
+                  false,
+              });
+
+
+          if (error) {
+
+            console.error(
+              'ERROR CREATING IN-APP NOTIFICATION:',
+              error.message
+            );
+
+            /*
+             * Allow retry if the insert failed.
+             */
+
+            notifiedBins.current[
+              bin.bin_id
+            ] = false;
+
+            return;
+          }
+
+
+          console.log(
+            'IN-APP NOTIFICATION CREATED FOR BIN:',
+            bin.bin_id
+          );
+
+
+        } catch (error) {
+
+          console.error(
+            'UNEXPECTED NOTIFICATION ERROR:',
+            error
+          );
+
+
+          /*
+           * Allow retry after an unexpected error.
+           */
+
+          notifiedBins.current[
+            bin.bin_id
+          ] = false;
+        }
+
+      },
+      []
+    );
+
 
   /*
    * =====================================================
-   * FETCH WHEN SCREEN IS OPENED
+   * FETCH BINS
    * =====================================================
    */
 
-  useFocusEffect(
-    useCallback(() => {
+  const fetchBins =
+    useCallback(
+      async () => {
 
-      setLoading(true);
+        try {
 
-      fetchNotifications();
+          const {
+            data,
+            error,
+          } =
+            await supabase
+              .from('bins')
+              .select('*')
+              .order(
+                'current_level',
+                {
+                  ascending: false,
+                }
+              );
 
-    }, [fetchNotifications])
-  );
+
+          if (error) {
+
+            console.error(
+              'ERROR FETCHING BINS:',
+              error.message
+            );
+
+            setBins([]);
+
+            return;
+          }
+
+
+          console.log(
+            'BINS FETCHED:',
+            data
+          );
+
+
+          const fetchedBins =
+            (data || []) as Bin[];
+
+
+          setBins(
+            fetchedBins
+          );
+
+
+          /*
+           * Check every bin for the
+           * 90% notification threshold.
+           */
+
+          for (
+            const bin of fetchedBins
+          ) {
+
+            await checkBinNotification(
+              bin
+            );
+
+          }
+
+
+        } catch (error) {
+
+          console.error(
+            'UNEXPECTED FETCH ERROR:',
+            error
+          );
+
+          setBins([]);
+
+        } finally {
+
+          setLoading(false);
+          setRefreshing(false);
+
+        }
+
+      },
+      [
+        checkBinNotification,
+      ]
+    );
+
 
   /*
    * =====================================================
-   * REALTIME NOTIFICATION UPDATES
+   * INITIAL DATA FETCH
    * =====================================================
    */
 
   useEffect(() => {
 
-    const channel =
-      supabase
-        .channel(
-          `notifications-${Date.now()}`
-        )
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'notification',
-          },
-          (payload) => {
+    void fetchBins();
 
-            console.log(
-              'Notification realtime update:',
-              payload
-            );
+  }, [
+    fetchBins,
+  ]);
 
-            fetchNotifications();
-
-          }
-        )
-        .subscribe(
-          (status) => {
-
-            console.log(
-              'Notifications realtime status:',
-              status
-            );
-
-          }
-        );
-
-    return () => {
-
-      supabase.removeChannel(
-        channel
-      );
-
-    };
-
-  }, [fetchNotifications]);
 
   /*
    * =====================================================
-   * ALSO LISTEN FOR BIN CHANGES
+   * REALTIME BIN UPDATES
    * =====================================================
    */
 
   useEffect(() => {
 
-    const channel =
-      supabase
-        .channel(
-          `notification-bins-${Date.now()}`
-        )
-        .on(
+    let cancelled =
+      false;
+
+
+    const setupRealtime =
+      async () => {
+
+        const channelName =
+          'omnibin-bins';
+
+
+        console.log(
+          'SETTING UP BIN REALTIME...'
+        );
+
+
+        /*
+         * -------------------------------------------------
+         * REMOVE EXISTING CHANNEL
+         * -------------------------------------------------
+         */
+
+        const existingChannels =
+          supabase.getChannels();
+
+
+        const existingChannel =
+          existingChannels.find(
+            (channel) =>
+              channel.topic ===
+              `realtime:${channelName}`
+          );
+
+
+        if (existingChannel) {
+
+          console.log(
+            'REMOVING EXISTING BIN REALTIME CHANNEL...'
+          );
+
+
+          await supabase.removeChannel(
+            existingChannel
+          );
+
+        }
+
+
+        /*
+         * Stop if component was unmounted.
+         */
+
+        if (cancelled) {
+
+          return null;
+
+        }
+
+
+        /*
+         * -------------------------------------------------
+         * CREATE CHANNEL
+         * -------------------------------------------------
+         */
+
+        const channel =
+          supabase.channel(
+            channelName
+          );
+
+
+        /*
+         * -------------------------------------------------
+         * ADD REALTIME LISTENER
+         * -------------------------------------------------
+         *
+         * IMPORTANT:
+         * Listener is added BEFORE subscribe().
+         */
+
+        channel.on(
           'postgres_changes',
           {
             event: 'UPDATE',
@@ -385,809 +518,1122 @@ export default function Notifications() {
           (payload) => {
 
             console.log(
-              'Notification bin update:',
-              payload
+              '================================='
             );
 
-            fetchNotifications();
+            console.log(
+              'BIN REALTIME UPDATE'
+            );
+
+            console.log(
+              'OLD DATA:',
+              payload.old
+            );
+
+            console.log(
+              'NEW DATA:',
+              payload.new
+            );
+
+            console.log(
+              '================================='
+            );
+
+
+            /*
+             * Convert updated record
+             * into a Bin object.
+             */
+
+            const updatedBin =
+              payload.new as Bin;
+
+
+            /*
+             * Check the 90% threshold.
+             */
+
+            void checkBinNotification(
+              updatedBin
+            );
+
+
+            /*
+             * Refresh dashboard data.
+             */
+
+            void fetchBins();
 
           }
-        )
-        .subscribe(
+        );
+
+
+        /*
+         * -------------------------------------------------
+         * SUBSCRIBE
+         * -------------------------------------------------
+         */
+
+        channel.subscribe(
           (status) => {
 
             console.log(
-              'Notification bin realtime status:',
+              'REALTIME STATUS:',
               status
             );
+
+
+            if (
+              status ===
+              'SUBSCRIBED'
+            ) {
+
+              console.log(
+                'REALTIME CONNECTED SUCCESSFULLY'
+              );
+
+            }
+
+
+            if (
+              status ===
+              'CHANNEL_ERROR'
+            ) {
+
+              console.error(
+                'REALTIME CHANNEL ERROR'
+              );
+
+            }
+
+
+            if (
+              status ===
+              'TIMED_OUT'
+            ) {
+
+              console.error(
+                'REALTIME CONNECTION TIMED OUT'
+              );
+
+            }
+
+
+            if (
+              status ===
+              'CLOSED'
+            ) {
+
+              console.log(
+                'REALTIME CHANNEL CLOSED'
+              );
+
+            }
 
           }
         );
 
+
+        return channel;
+
+      };
+
+
+    /*
+     * -------------------------------------------------
+     * SETUP CHANNEL
+     * -------------------------------------------------
+     */
+
+    let realtimeChannel:
+      ReturnType<
+        typeof supabase.channel
+      > | null = null;
+
+
+    void setupRealtime().then(
+      (channel) => {
+
+        if (
+          channel &&
+          !cancelled
+        ) {
+
+          realtimeChannel =
+            channel;
+
+        } else if (
+          channel
+        ) {
+
+          supabase.removeChannel(
+            channel
+          );
+
+        }
+
+      }
+    );
+
+
+    /*
+     * -------------------------------------------------
+     * CLEANUP
+     * -------------------------------------------------
+     */
+
     return () => {
 
-      supabase.removeChannel(
-        channel
-      );
+      cancelled = true;
+
+
+      if (
+        realtimeChannel
+      ) {
+
+        console.log(
+          'REMOVING BIN REALTIME CHANNEL...'
+        );
+
+
+        void supabase.removeChannel(
+          realtimeChannel
+        );
+
+
+        realtimeChannel =
+          null;
+
+      }
 
     };
 
-  }, [fetchNotifications]);
+  }, [
+    fetchBins,
+    checkBinNotification,
+  ]);
+
 
   /*
    * =====================================================
-   * OPEN NOTIFICATION
+   * PULL TO REFRESH
    * =====================================================
    */
 
-  const openNotification = async (
-    item: NotificationWithBin
-  ) => {
+  const onRefresh =
+    () => {
 
-    setSelectedNotification(
-      item
-    );
+      setRefreshing(
+        true
+      );
 
-    if (
-      !item.notification.is_read
-    ) {
 
-      const {
-        error,
-      } = await supabase
-        .from('notification')
-        .update({
-          is_read: true,
-        })
-        .eq(
-          'notif_id',
-          item.notification
-            .notif_id
-        );
+      setMonitorReloadKey(
+        (key) =>
+          key + 1
+      );
 
-      if (error) {
 
-        console.error(
-          'Error marking notification as read:',
-          error.message
-        );
+      void fetchBins();
 
-      } else {
+    };
 
-        setNotifications(
-          (current) =>
-            current.map(
-              (
-                notificationItem
-              ) =>
-                notificationItem
-                  .notification
-                  .notif_id ===
-                item.notification
-                  .notif_id
-                  ? {
-                      ...notificationItem,
 
-                      notification: {
-                        ...notificationItem.notification,
+  /*
+   * =====================================================
+   * DETERMINE STATUS
+   * =====================================================
+   */
 
-                        is_read: true,
-                      },
-                    }
-                  : notificationItem
-            )
-        );
+  const getStatus =
+    (
+      level: number
+    ) => {
+
+      if (
+        level >= 90
+      ) {
+
+        return 'FULL';
 
       }
-    }
-  };
+
+
+      if (
+        level >= 50
+      ) {
+
+        return 'HALF FULL';
+
+      }
+
+
+      return 'AVAILABLE';
+
+    };
+
 
   /*
    * =====================================================
-   * CLOSE MODAL
+   * DETERMINE STATUS COLOR
    * =====================================================
    */
 
-  const closeModal = () => {
+  const getStatusColor =
+    (
+      level: number
+    ) => {
 
-    setSelectedNotification(
-      null
-    );
+      if (
+        level >= 90
+      ) {
 
-  };
+        return '#C62828';
+
+      }
+
+
+      if (
+        level >= 50
+      ) {
+
+        return '#F9A825';
+
+      }
+
+
+      return '#2E7D32';
+
+    };
+
 
   /*
    * =====================================================
-   * UI
+   * DETERMINE WASTE ICON
+   * =====================================================
+   */
+
+  const getWasteIcon =
+    (
+      wasteType: string
+    ) => {
+
+      const type =
+        wasteType
+          .toLowerCase()
+          .trim();
+
+
+      if (
+        type ===
+        'biodegradable'
+      ) {
+
+        return 'leaf-outline';
+
+      }
+
+
+      if (
+        type ===
+        'non-biodegradable'
+      ) {
+
+        return 'trash-bin-outline';
+
+      }
+
+
+      if (
+        type ===
+        'recyclable'
+      ) {
+
+        return 'recycle-outline';
+
+      }
+
+
+      return 'trash-bin-outline';
+
+    };
+
+
+  /*
+   * =====================================================
+   * RENDER
    * =====================================================
    */
 
   return (
-    <View style={styles.container}>
 
-      {/* HEADER */}
+    <View
+      style={
+        styles.screen
+      }
+    >
 
-      <Header
-        title="Notifications"
-        subtitle="Bin collection alerts"
-      />
-
-      {/* NOTIFICATION LIST */}
-
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={
-          styles.content
-        }
-        showsVerticalScrollIndicator={
-          false
+      <View
+        style={
+          styles.container
         }
       >
 
-        {loading ? (
+        <ScrollView
+
+          contentContainerStyle={
+            styles.content
+          }
+
+          refreshControl={
+
+            <RefreshControl
+
+              refreshing={
+                refreshing
+              }
+
+              onRefresh={
+                onRefresh
+              }
+
+            />
+
+          }
+
+          showsVerticalScrollIndicator={
+            false
+          }
+
+        >
+
+          {/* HEADER */}
+
+          <Header
+            title="OmniBin"
+            subtitle="Smart Waste Management System"
+          />
+
+
+          {/* WELCOME */}
 
           <View
             style={
-              styles.loadingContainer
+              styles.welcome
             }
           >
 
-            <ActivityIndicator
-              size="large"
-              color="#537B2F"
-            />
+            <Text
+              style={
+                styles.welcomeTitle
+              }
+            >
+              Dashboard
+            </Text>
+
 
             <Text
               style={
-                styles.loadingText
+                styles.welcomeText
               }
             >
-              Loading notifications...
+              Live fill, camera
+              confirmation, and the
+              status of every bin.
             </Text>
 
           </View>
 
-        ) : notifications.length === 0 ? (
 
-          /* EMPTY STATE */
-
-          <View
-            style={
-              styles.emptyContainer
+          <BinMonitor
+            reloadKey={
+              monitorReloadKey
             }
-          >
+          />
+
+
+          {/* LOADING */}
+
+          {loading ? (
+
+            <ActivityIndicator
+
+              size="large"
+
+              color="#1B5E20"
+
+              style={
+                styles.loading
+              }
+
+            />
+
+          ) : bins.length === 0 ? (
+
+            /* EMPTY STATE */
 
             <View
               style={
-                styles.emptyIconContainer
+                styles.emptyContainer
               }
             >
 
-              <Ionicons
-                name="checkmark-circle-outline"
-                size={42}
-                color="#537B2F"
-              />
+              <View
+                style={
+                  styles.emptyIcon
+                }
+              >
+
+                <Ionicons
+                  name="trash-outline"
+                  size={30}
+                  color="#8A8A8A"
+                />
+
+              </View>
+
+
+              <Text
+                style={
+                  styles.emptyTitle
+                }
+              >
+                No Bin Data
+              </Text>
+
+
+              <Text
+                style={
+                  styles.emptyText
+                }
+              >
+                There is currently
+                no waste bin
+                information
+                available.
+              </Text>
 
             </View>
 
-            <Text
-              style={
-                styles.emptyTitle
-              }
-            >
-              No Notifications
-            </Text>
+          ) : (
 
-            <Text
-              style={
-                styles.emptyText
-              }
-            >
-              There are no bins requiring
-              collection.
-            </Text>
+            /* BIN LIST */
 
-          </View>
+            <View>
 
-        ) : (
+              {bins.map(
+                (bin) => {
 
-          /* NOTIFICATIONS */
+                  const status =
+                    getStatus(
+                      bin.current_level
+                    );
 
-          notifications.map(
-            (item) => {
 
-              const bin =
-                item.bin;
+                  const statusColor =
+                    getStatusColor(
+                      bin.current_level
+                    );
 
-              return (
 
-                <Pressable
-                  key={
-                    item.notification
-                      .notif_id
-                  }
-                  style={[
-                    styles.notificationCard,
+                  return (
 
-                    !item.notification
-                      .is_read &&
-                      styles.unreadCard,
-                  ]}
-                  onPress={() =>
-                    openNotification(
-                      item
-                    )
-                  }
-                >
-
-                  {/* ALERT ICON */}
-
-                  <View
-                    style={
-                      styles.alertIconContainer
-                    }
-                  >
-
-                    <Ionicons
-                      name="alert"
-                      size={24}
-                      color="#C62828"
-                    />
-
-                  </View>
-
-                  {/* CONTENT */}
-
-                  <View
-                    style={
-                      styles.notificationContent
-                    }
-                  >
-
-                    <Text
+                    <View
+                      key={
+                        bin.bin_id
+                      }
                       style={
-                        styles.notificationTitle
+                        styles.card
                       }
                     >
-                      Bin requires collection.
-                    </Text>
 
-                    <Text
-                      style={
-                        styles.notificationMessage
-                      }
-                    >
-                      Bin requires collection.
-                    </Text>
+                      {/* CARD HEADER */}
 
-                    <Text
-                      style={
-                        styles.currentLevelText
-                      }
-                    >
-                      Current level:{' '}
-                      {
-                        bin.current_level
-                      }%
-                    </Text>
+                      <View
+                        style={
+                          styles.cardHeader
+                        }
+                      >
 
-                    <Text
-                      style={
-                        styles.dateText
-                      }
-                    >
-                      {new Date(
-                        item.notification
-                          .created_at
-                      ).toLocaleString()}
-                    </Text>
+                        <View
+                          style={
+                            styles.binTitleContainer
+                          }
+                        >
 
-                  </View>
+                          {/* WASTE ICON */}
 
-                </Pressable>
-              );
-            }
-          )
+                          <View
+                            style={[
+                              styles.binIcon,
+                              {
+                                backgroundColor:
+                                  bin.current_level >=
+                                  90
+                                    ? '#FFEBEE'
+                                    : '#E8F5E9',
+                              },
+                            ]}
+                          >
 
-        )}
+                            <Ionicons
 
-      </ScrollView>
+                              name={
+                                getWasteIcon(
+                                  bin.waste_type
+                                ) as any
+                              }
 
-      {/* =================================================
-          BIN INFORMATION MODAL
-          ================================================= */}
+                              size={21}
 
-      <Modal
-        visible={
-          selectedNotification !==
-          null
-        }
-        transparent
-        animationType="fade"
-        onRequestClose={
-          closeModal
-        }
-      >
+                              color={
+                                statusColor
+                              }
 
-        <View
-          style={
-            styles.modalOverlay
-          }
-        >
+                            />
 
-          <View
-            style={
-              styles.modalContainer
-            }
-          >
+                          </View>
 
-            {selectedNotification && (
-              <>
 
-                {/* MODAL HEADER */}
+                          {/* BIN INFORMATION */}
 
-                <View
-                  style={
-                    styles.modalHeader
-                  }
-                >
+                          <View>
 
-                  <View
-                    style={[
-                      styles.binIconContainer,
-                      {
-                        backgroundColor:
-                          getWasteIconColor(
-                            selectedNotification
-                              .bin
-                              .waste_type
-                          ) + '18',
-                      },
-                    ]}
-                  >
+                            <Text
+                              style={
+                                styles.binName
+                              }
+                            >
+                              {
+                                bin.waste_type
+                              }
+                            </Text>
 
-                    <Ionicons
-                      name={getWasteIcon(
-                        selectedNotification
-                          .bin
-                          .waste_type
-                      )}
-                      size={28}
-                      color={getWasteIconColor(
-                        selectedNotification
-                          .bin
-                          .waste_type
-                      )}
-                    />
 
-                  </View>
+                            <Text
+                              style={
+                                styles.binIdentifier
+                              }
+                            >
+                              {
+                                bin.name
+                              }
+                            </Text>
 
-                  <View
-                    style={
-                      styles.modalTitleContainer
-                    }
-                  >
+                          </View>
 
-                    <Text
-                      style={
-                        styles.modalTitle
-                      }
-                    >
-                      Bin Information
-                    </Text>
+                        </View>
 
-                  </View>
 
-                </View>
+                        {/* STATUS */}
 
-                {/* NAME */}
+                        <Text
+                          style={[
+                            styles.status,
+                            {
+                              color:
+                                statusColor,
+                            },
+                          ]}
+                        >
+                          {
+                            status
+                          }
+                        </Text>
 
-                <View
-                  style={
-                    styles.infoRow
-                  }
-                >
+                      </View>
 
-                  <Text
-                    style={
-                      styles.infoLabel
-                    }
-                  >
-                    Name
-                  </Text>
 
-                  <Text
-                    style={
-                      styles.infoValue
-                    }
-                  >
-                    {
-                      selectedNotification
-                        .bin
-                        .name
-                    }
-                  </Text>
+                      {/* LEVEL */}
 
-                </View>
+                      <View
+                        style={
+                          styles.levelRow
+                        }
+                      >
 
-                {/* LOCATION */}
+                        <Text
+                          style={[
+                            styles.level,
+                            {
+                              color:
+                                statusColor,
+                            },
+                          ]}
+                        >
+                          {
+                            bin.current_level
+                          }%
+                        </Text>
 
-                <View
-                  style={
-                    styles.infoRow
-                  }
-                >
 
-                  <Text
-                    style={
-                      styles.infoLabel
-                    }
-                  >
-                    Location
-                  </Text>
+                        <Text
+                          style={
+                            styles.capacityText
+                          }
+                        >
+                          Capacity
+                        </Text>
 
-                  <Text
-                    style={
-                      styles.infoValue
-                    }
-                  >
-                    {
-                      selectedNotification
-                        .bin
-                        .location
-                    }
-                  </Text>
+                      </View>
 
-                </View>
 
-                {/* WASTE TYPE */}
+                      {/* PROGRESS BAR */}
 
-                <View
-                  style={
-                    styles.infoRow
-                  }
-                >
+                      <View
+                        style={
+                          styles.progressBackground
+                        }
+                      >
 
-                  <Text
-                    style={
-                      styles.infoLabel
-                    }
-                  >
-                    Waste Type
-                  </Text>
+                        <View
+                          style={[
+                            styles.progress,
+                            {
+                              width: `${Math.min(
+                                Math.max(
+                                  bin.current_level,
+                                  0
+                                ),
+                                100
+                              )}%`,
 
-                  <Text
-                    style={
-                      styles.infoValue
-                    }
-                  >
-                    {
-                      selectedNotification
-                        .bin
-                        .waste_type
-                    }
-                  </Text>
+                              backgroundColor:
+                                statusColor,
+                            },
+                          ]}
+                        />
 
-                </View>
+                      </View>
 
-                {/* CURRENT LEVEL */}
 
-                <View
-                  style={
-                    styles.infoRow
-                  }
-                >
+                      {/* LOCATION */}
 
-                  <Text
-                    style={
-                      styles.infoLabel
-                    }
-                  >
-                    Current Level
-                  </Text>
+                      <View
+                        style={
+                          styles.infoRow
+                        }
+                      >
 
-                  <Text
-                    style={[
-                      styles.infoValue,
-                      styles.levelValue,
-                    ]}
-                  >
-                    {
-                      selectedNotification
-                        .bin
-                        .current_level
-                    }%
-                  </Text>
+                        <Ionicons
+                          name="location-outline"
+                          size={16}
+                          color="#777777"
+                        />
 
-                </View>
 
-                {/* STATUS */}
+                        <Text
+                          style={
+                            styles.location
+                          }
+                        >
+                          {
+                            bin.location
+                          }
+                        </Text>
 
-                <View
-                  style={
-                    styles.infoRow
-                  }
-                >
+                      </View>
 
-                  <Text
-                    style={
-                      styles.infoLabel
-                    }
-                  >
-                    Status
-                  </Text>
 
-                  <Text
-                    style={[
-                      styles.infoValue,
-                      styles.statusValue,
-                    ]}
-                  >
-                    REQUIRES COLLECTION
-                  </Text>
+                      {/* LAST UPDATED */}
 
-                </View>
+                      <View
+                        style={
+                          styles.infoRow
+                        }
+                      >
 
-                {/* CLOSE */}
+                        <Ionicons
+                          name="time-outline"
+                          size={15}
+                          color="#999999"
+                        />
 
-                <Pressable
-                  style={
-                    styles.closeButton
-                  }
-                  onPress={
-                    closeModal
-                  }
-                >
 
-                  <Text
-                    style={
-                      styles.closeButtonText
-                    }
-                  >
-                    CLOSE
-                  </Text>
+                        <Text
+                          style={
+                            styles.updated
+                          }
+                        >
+                          Last updated:{' '}
 
-                </Pressable>
+                          {bin.updated_at
+                            ? new Date(
+                                bin.updated_at
+                              ).toLocaleString()
+                            : 'N/A'}
 
-              </>
-            )}
+                        </Text>
 
-          </View>
+                      </View>
 
-        </View>
+                    </View>
 
-      </Modal>
+                  );
 
-      {/* BOTTOM NAVIGATION */}
+                }
+              )}
 
-      <BottomNav />
+            </View>
+
+          )}
+
+        </ScrollView>
+
+
+        {/* BOTTOM NAVIGATION */}
+
+        <BottomNav />
+
+      </View>
 
     </View>
+
   );
+
 }
 
-// ======================================================
-// STYLES
-// ======================================================
 
-const styles = StyleSheet.create({
+/*
+ * =====================================================
+ * STYLES
+ * =====================================================
+ */
 
-  container: {
-    flex: 1,
-    backgroundColor: '#F5F5F5',
-  },
+const styles =
+  StyleSheet.create({
 
-  scrollView: {
-    flex: 1,
-  },
+    screen: {
 
-  content: {
-    padding: 20,
-    paddingBottom: 110,
-  },
+      flex: 1,
 
-  notificationCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 20,
-    marginBottom: 14,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
+      backgroundColor:
+        '#F5F7F5',
 
-    shadowColor: '#000',
-
-    shadowOffset: {
-      width: 0,
-      height: 2,
     },
 
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
 
-    elevation: 3,
-  },
+    container: {
 
-  unreadCard: {
-    borderLeftWidth: 4,
-    borderLeftColor: '#C62828',
-  },
+      flex: 1,
 
-  alertIconContainer: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: '#FCEAEA',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 14,
-  },
+      backgroundColor:
+        '#F5F7F5',
 
-  notificationContent: {
-    flex: 1,
-  },
-
-  notificationTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#222222',
-    marginBottom: 5,
-  },
-
-  notificationMessage: {
-    fontSize: 14,
-    color: '#555555',
-    marginBottom: 10,
-  },
-
-  currentLevelText: {
-    fontSize: 14,
-    color: '#444444',
-    marginBottom: 5,
-  },
-
-  dateText: {
-    fontSize: 12,
-    color: '#888888',
-  },
-
-  loadingContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: 100,
-  },
-
-  loadingText: {
-    marginTop: 12,
-    fontSize: 14,
-    color: '#777777',
-  },
-
-  emptyContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: 120,
-    paddingHorizontal: 30,
-  },
-
-  emptyIconContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#EAF2E6',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 18,
-  },
-
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#333333',
-    marginBottom: 8,
-  },
-
-  emptyText: {
-    fontSize: 14,
-    color: '#777777',
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-
-  modalOverlay: {
-    flex: 1,
-    backgroundColor:
-      'rgba(0, 0, 0, 0.45)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-  },
-
-  modalContainer: {
-    width: '100%',
-    maxWidth: 500,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 22,
-    padding: 26,
-
-    shadowColor: '#000',
-
-    shadowOffset: {
-      width: 0,
-      height: 5,
     },
 
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
 
-    elevation: 8,
-  },
+    content: {
 
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 22,
-  },
+      paddingBottom: 100,
 
-  binIconContainer: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 16,
-  },
+    },
 
-  modalTitleContainer: {
-    flex: 1,
-  },
 
-  modalTitle: {
-    fontSize: 23,
-    fontWeight: '700',
-    color: '#222222',
-  },
+    welcome: {
 
-  infoRow: {
-    paddingVertical: 13,
-    borderBottomWidth: 1,
-    borderBottomColor: '#EEEEEE',
-  },
+      paddingHorizontal: 24,
 
-  infoLabel: {
-    fontSize: 13,
-    color: '#888888',
-    marginBottom: 5,
-  },
+      paddingTop: 24,
 
-  infoValue: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333333',
-  },
+      paddingBottom: 12,
 
-  levelValue: {
-    color: '#C62828',
-  },
+    },
 
-  statusValue: {
-    color: '#C62828',
-    fontWeight: '700',
-  },
 
-  closeButton: {
-    height: 50,
-    backgroundColor: '#F1F1F1',
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 20,
-  },
+    welcomeTitle: {
 
-  closeButtonText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#444444',
-  },
+      fontSize: 25,
 
-});
+      fontWeight: 'bold',
+
+      color: '#222222',
+
+    },
+
+
+    welcomeText: {
+
+      color: '#666666',
+
+      marginTop: 5,
+
+      fontSize: 14,
+
+      lineHeight: 20,
+
+    },
+
+
+    loading: {
+
+      marginTop: 45,
+
+    },
+
+
+    card: {
+
+      backgroundColor:
+        '#FFFFFF',
+
+      marginHorizontal: 20,
+
+      marginVertical: 8,
+
+      padding: 20,
+
+      borderRadius: 16,
+
+      shadowColor: '#000',
+
+      shadowOffset: {
+
+        width: 0,
+
+        height: 2,
+
+      },
+
+      shadowOpacity: 0.05,
+
+      shadowRadius: 4,
+
+      elevation: 2,
+
+    },
+
+
+    cardHeader: {
+
+      flexDirection:
+        'row',
+
+      justifyContent:
+        'space-between',
+
+      alignItems:
+        'center',
+
+    },
+
+
+    binTitleContainer: {
+
+      flexDirection:
+        'row',
+
+      alignItems:
+        'center',
+
+      flex: 1,
+
+    },
+
+
+    binIcon: {
+
+      width: 42,
+
+      height: 42,
+
+      borderRadius: 21,
+
+      alignItems:
+        'center',
+
+      justifyContent:
+        'center',
+
+      marginRight: 12,
+
+    },
+
+
+    binName: {
+
+      fontSize: 17,
+
+      fontWeight: 'bold',
+
+      color: '#222222',
+
+    },
+
+
+    binIdentifier: {
+
+      fontSize: 12,
+
+      color: '#888888',
+
+      marginTop: 2,
+
+    },
+
+
+    status: {
+
+      fontSize: 11,
+
+      fontWeight: 'bold',
+
+    },
+
+
+    levelRow: {
+
+      flexDirection:
+        'row',
+
+      alignItems:
+        'baseline',
+
+      marginTop: 15,
+
+    },
+
+
+    level: {
+
+      fontSize: 32,
+
+      fontWeight: 'bold',
+
+    },
+
+
+    capacityText: {
+
+      fontSize: 12,
+
+      color: '#999999',
+
+      marginLeft: 7,
+
+    },
+
+
+    progressBackground: {
+
+      height: 10,
+
+      backgroundColor:
+        '#E5E5E5',
+
+      borderRadius: 10,
+
+      marginTop: 10,
+
+      overflow: 'hidden',
+
+    },
+
+
+    progress: {
+
+      height: '100%',
+
+      borderRadius: 10,
+
+    },
+
+
+    infoRow: {
+
+      flexDirection:
+        'row',
+
+      alignItems:
+        'center',
+
+      marginTop: 12,
+
+    },
+
+
+    location: {
+
+      color: '#666666',
+
+      fontSize: 13,
+
+      marginLeft: 6,
+
+    },
+
+
+    updated: {
+
+      color: '#999999',
+
+      fontSize: 11,
+
+      marginLeft: 6,
+
+    },
+
+
+    emptyContainer: {
+
+      alignItems:
+        'center',
+
+      justifyContent:
+        'center',
+
+      paddingHorizontal: 30,
+
+      paddingTop: 75,
+
+    },
+
+
+    emptyIcon: {
+
+      width: 65,
+
+      height: 65,
+
+      borderRadius: 33,
+
+      backgroundColor:
+        '#E8ECE8',
+
+      alignItems:
+        'center',
+
+      justifyContent:
+        'center',
+
+      marginBottom: 15,
+
+    },
+
+
+    emptyTitle: {
+
+      fontSize: 20,
+
+      fontWeight: 'bold',
+
+      color: '#333333',
+
+    },
+
+
+    emptyText: {
+
+      fontSize: 14,
+
+      color: '#888888',
+
+      textAlign: 'center',
+
+      marginTop: 8,
+
+      lineHeight: 20,
+
+    },
+
+  });
