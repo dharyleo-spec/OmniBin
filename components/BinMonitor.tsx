@@ -2,7 +2,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import * as Notifications from 'expo-notifications';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 
 import {
   BIN_HEIGHT_CM,
@@ -10,245 +15,667 @@ import {
   fetchMonitorState,
   type MonitorState,
 } from '../lib/binMonitor';
+
 import { supabase } from '../lib/supabase';
 
 type BinMonitorProps = {
   reloadKey?: number;
 };
 
-function clock(iso: string | undefined) {
+type IoniconName =
+  keyof typeof Ionicons.glyphMap;
+
+/*
+ * =====================================================
+ * CLOCK
+ * =====================================================
+ */
+
+function clock(
+  iso: string | undefined
+) {
   if (!iso) {
     return '—';
   }
 
-  const date = new Date(iso);
+  const date =
+    new Date(iso);
 
-  if (Number.isNaN(date.getTime())) {
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
     return iso;
   }
 
-  return date.toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
+  return date.toLocaleString(
+    undefined,
+    {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    }
+  );
 }
 
-function percentOrDash(value: number | null | undefined) {
-  if (value === null || value === undefined) {
+/*
+ * =====================================================
+ * PERCENT
+ * =====================================================
+ */
+
+function percentOrDash(
+  value:
+    | number
+    | null
+    | undefined
+) {
+  if (
+    value === null ||
+    value === undefined
+  ) {
     return '—';
   }
 
   return `${value}%`;
 }
 
-export default function BinMonitor({ reloadKey = 0 }: BinMonitorProps) {
-  const [state, setState] = useState<MonitorState | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+/*
+ * =====================================================
+ * WASTE ICON
+ * =====================================================
+ */
 
-  const notifiedSensor = useRef(false);
-  const notifiedCamera = useRef(false);
+function getWasteIcon(
+  wasteType:
+    | string
+    | undefined
+): IoniconName {
+  const type =
+    wasteType
+      ?.toLowerCase()
+      .trim();
 
-  const notify = useCallback(async (title: string, body: string) => {
-    try {
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title,
-          body,
-          sound: 'omnibin_alert.wav',
-        },
-        trigger: null,
-      });
-    } catch (notifyError) {
-      console.error('MONITOR NOTIFICATION ERROR:', notifyError);
-    }
-  }, []);
+  if (
+    type ===
+    'biodegradable'
+  ) {
+    return 'leaf-outline';
+  }
 
-  const load = useCallback(async () => {
-    try {
-      const next = await fetchMonitorState();
-      setState(next);
-      setError('');
+  if (
+    type ===
+    'non-biodegradable'
+  ) {
+    return 'trash-bin-outline';
+  }
 
-      const sensorFull = Boolean(next.sensor?.is_full);
-      const cameraFull = next.camera?.is_full === true;
+  if (
+    type ===
+    'recyclable'
+  ) {
+    return 'refresh-circle-outline';
+  }
 
-      if (sensorFull && !notifiedSensor.current) {
-        notifiedSensor.current = true;
-        notify(
-          'OmniBin Alert',
-          next.sensor?.distance_cm != null
-            ? `HC-SR04 measured ${next.sensor.distance_cm} cm. The trashcan is full at ${next.sensor.fill_percent}%.`
-            : next.sensor
-              ? `The trashcan is full at ${next.sensor.fill_percent}%.`
-              : 'The HC-SR04 reported the trashcan is full.',
-        );
-      }
+  return 'trash-bin-outline';
+}
 
-      if (!sensorFull) {
-        notifiedSensor.current = false;
-      }
+/*
+ * =====================================================
+ * COMPONENT
+ * =====================================================
+ */
 
-      if (cameraFull && !notifiedCamera.current) {
-        notifiedCamera.current = true;
-        notify(
-          'OmniBin Alert',
-          next.confirmed_full
-            ? 'Camera confirmed the trashcan is full.'
-            : 'Camera shows a full trashcan. The distance sensor has not reported full.',
-        );
-      }
+export default function BinMonitor({
+  reloadKey = 0,
+}: BinMonitorProps) {
+  const [state, setState] =
+    useState<MonitorState | null>(
+      null
+    );
 
-      if (!cameraFull) {
-        notifiedCamera.current = false;
-      }
-    } catch (loadError) {
-      const message =
-        loadError instanceof Error
-          ? loadError.message
-          : 'Could not load the trashcan monitor.';
+  const [loading, setLoading] =
+    useState(true);
 
-      console.error('MONITOR FETCH ERROR:', message);
-      setError(message);
-    } finally {
-      setLoading(false);
-    }
-  }, [notify]);
+  const [error, setError] =
+    useState('');
+
+  const notifiedSensor =
+    useRef(false);
+
+  const notifiedCamera =
+    useRef(false);
+
+  /*
+   * ===================================================
+   * PUSH NOTIFICATION
+   * ===================================================
+   */
+
+  const notify =
+    useCallback(
+      async (
+        title: string,
+        body: string
+      ) => {
+        try {
+          await Notifications.scheduleNotificationAsync(
+            {
+              content: {
+                title,
+                body,
+                sound:
+                  'omnibin_alert.wav',
+              },
+
+              trigger: null,
+            }
+          );
+        } catch (
+          notifyError
+        ) {
+          console.error(
+            'MONITOR NOTIFICATION ERROR:',
+            notifyError
+          );
+        }
+      },
+      []
+    );
+
+  /*
+   * ===================================================
+   * LOAD
+   * ===================================================
+   */
+
+  const load =
+    useCallback(
+      async () => {
+        try {
+          const next =
+            await fetchMonitorState();
+
+          setState(next);
+
+          setError('');
+
+          /*
+           * HC-SR04 IS THE MAIN
+           * LIVE SOURCE
+           */
+
+          const sensorFull =
+            Boolean(
+              next.sensor?.is_full
+            );
+
+          const cameraFull =
+            next.camera
+              ?.is_full === true;
+
+          /*
+           * SENSOR NOTIFICATION
+           */
+
+          if (
+            sensorFull &&
+            !notifiedSensor.current
+          ) {
+            notifiedSensor.current =
+              true;
+
+            notify(
+              'OmniBin Alert',
+
+              next.sensor
+                ?.distance_cm != null
+                ? `HC-SR04 measured ${next.sensor.distance_cm} cm. The trashcan is full at ${next.sensor.fill_percent}%.`
+                : next.sensor
+                  ? `The trashcan is full at ${next.sensor.fill_percent}%.`
+                  : 'The HC-SR04 reported the trashcan is full.'
+            );
+          }
+
+          if (!sensorFull) {
+            notifiedSensor.current =
+              false;
+          }
+
+          /*
+           * CAMERA NOTIFICATION
+           */
+
+          if (
+            cameraFull &&
+            !notifiedCamera.current
+          ) {
+            notifiedCamera.current =
+              true;
+
+            notify(
+              'OmniBin Alert',
+
+              next.confirmed_full
+                ? 'Camera confirmed the trashcan is full.'
+                : 'Camera shows a full trashcan. The distance sensor has not reported full.'
+            );
+          }
+
+          if (!cameraFull) {
+            notifiedCamera.current =
+              false;
+          }
+        } catch (
+          loadError
+        ) {
+          const message =
+            loadError instanceof
+            Error
+              ? loadError.message
+              : 'Could not load the trashcan monitor.';
+
+          console.error(
+            'MONITOR FETCH ERROR:',
+            message
+          );
+
+          setError(message);
+        } finally {
+          setLoading(false);
+        }
+      },
+      [notify]
+    );
+
+  /*
+   * ===================================================
+   * INITIAL LOAD
+   * ===================================================
+   */
 
   useEffect(() => {
     load();
-  }, [load, reloadKey]);
+  }, [
+    load,
+    reloadKey,
+  ]);
+
+  /*
+   * ===================================================
+   * REALTIME
+   * ===================================================
+   */
 
   useEffect(() => {
-    let cancelled = false;
+    let cancelled =
+      false;
 
-    const setupRealtime = async () => {
-      const channelName = 'omnibin-monitor';
-      const existing = supabase
-        .getChannels()
-        .find((channel) => channel.topic === `realtime:${channelName}`);
+    const setupRealtime =
+      async () => {
+        const channelName =
+          'omnibin-monitor';
 
-      if (existing) {
-        await supabase.removeChannel(existing);
+        const existing =
+          supabase
+            .getChannels()
+            .find(
+              (
+                channel
+              ) =>
+                channel.topic ===
+                `realtime:${channelName}`
+            );
+
+        if (existing) {
+          await supabase.removeChannel(
+            existing
+          );
+        }
+
+        if (cancelled) {
+          return null;
+        }
+
+        const channel =
+          supabase.channel(
+            channelName
+          );
+
+        /*
+         * HC-SR04
+         */
+
+        channel.on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'readings',
+          },
+          () => {
+            load();
+          }
+        );
+
+        /*
+         * CAMERA
+         */
+
+        channel.on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'camera_checks',
+          },
+          () => {
+            load();
+          }
+        );
+
+        /*
+         * BIN DETAILS
+         */
+
+        channel.on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'bins',
+          },
+          () => {
+            load();
+          }
+        );
+
+        channel.subscribe();
+
+        return channel;
+      };
+
+    let realtimeChannel:
+      ReturnType<
+        typeof supabase.channel
+      > | null = null;
+
+    setupRealtime().then(
+      (
+        channel
+      ) => {
+        if (
+          channel &&
+          !cancelled
+        ) {
+          realtimeChannel =
+            channel;
+        } else if (
+          channel
+        ) {
+          supabase.removeChannel(
+            channel
+          );
+        }
       }
-
-      if (cancelled) {
-        return null;
-      }
-
-      const channel = supabase.channel(channelName);
-
-      channel.on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'readings' },
-        () => {
-          load();
-        },
-      );
-
-      channel.on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'camera_checks' },
-        () => {
-          load();
-        },
-      );
-
-      channel.subscribe();
-      return channel;
-    };
-
-    let realtimeChannel: ReturnType<typeof supabase.channel> | null = null;
-
-    setupRealtime().then((channel) => {
-      if (channel && !cancelled) {
-        realtimeChannel = channel;
-      } else if (channel) {
-        supabase.removeChannel(channel);
-      }
-    });
+    );
 
     return () => {
       cancelled = true;
 
-      if (realtimeChannel) {
-        supabase.removeChannel(realtimeChannel);
+      if (
+        realtimeChannel
+      ) {
+        supabase.removeChannel(
+          realtimeChannel
+        );
       }
     };
   }, [load]);
 
-  const sensor = state?.sensor ?? null;
-  const camera = state?.camera ?? null;
-  const analytics = state?.analytics;
-  const history = state?.history ?? [];
-  const chartPoints = history.slice(-16);
-  const recent = [...history].reverse().slice(0, 6);
+  /*
+   * ===================================================
+   * DATA
+   * ===================================================
+   */
 
-  let statusLabel = 'No sensor data';
-  let statusColor = '#777777';
-  let statusBackground = '#F3F3F3';
+  const bin =
+    state?.bin ?? null;
 
-  if (state?.confirmed_full) {
-    statusLabel = 'Full, camera confirmed';
-    statusColor = '#C62828';
-    statusBackground = '#FFEBEE';
-  } else if (sensor?.is_full) {
-    statusLabel = 'Sensor says full';
-    statusColor = '#E65100';
-    statusBackground = '#FFF3E0';
-  } else if (sensor) {
-    statusLabel = 'Not full';
-    statusColor = '#2E7D32';
-    statusBackground = '#E8F5E9';
+  const sensor =
+    state?.sensor ?? null;
+
+  const camera =
+    state?.camera ?? null;
+
+  const analytics =
+    state?.analytics;
+
+  const history =
+    state?.history ?? [];
+
+  const chartPoints =
+    history.slice(-16);
+
+  const recent =
+    [
+      ...history,
+    ]
+      .reverse()
+      .slice(0, 6);
+
+  /*
+   * ===================================================
+   * STATUS
+   * ===================================================
+   */
+
+  let statusLabel =
+    'WAITING FOR SENSOR';
+
+  let statusColor =
+    '#777777';
+
+  let statusBackground =
+    '#F3F3F3';
+
+  if (
+    state?.confirmed_full
+  ) {
+    statusLabel =
+      'FULL - CAMERA CONFIRMED';
+
+    statusColor =
+      '#C62828';
+
+    statusBackground =
+      '#FFEBEE';
+  } else if (
+    sensor?.is_full
+  ) {
+    statusLabel =
+      'FULL';
+
+    statusColor =
+      '#C62828';
+
+    statusBackground =
+      '#FFEBEE';
+  } else if (
+    sensor
+  ) {
+    statusLabel =
+      'AVAILABLE';
+
+    statusColor =
+      '#2E7D32';
+
+    statusBackground =
+      '#E8F5E9';
   }
 
-  const fill = sensor ? Math.max(0, Math.min(100, sensor.fill_percent)) : 0;
+  const fill =
+    sensor
+      ? Math.max(
+          0,
+          Math.min(
+            100,
+            sensor.fill_percent
+          )
+        )
+      : 0;
 
-  if (loading && !state) {
+  /*
+   * ===================================================
+   * LOADING
+   * ===================================================
+   */
+
+  if (
+    loading &&
+    !state
+  ) {
     return (
-      <View style={styles.wrap}>
-        <Text style={styles.sectionTitle}>Live trashcan</Text>
-        <ActivityIndicator color="#1B5E20" style={styles.loading} />
+      <View
+        style={
+          styles.wrap
+        }
+      >
+        <Text
+          style={
+            styles.sectionTitle
+          }
+        >
+          Live trashcan
+        </Text>
+
+        <ActivityIndicator
+          color="#1B5E20"
+          style={
+            styles.loading
+          }
+        />
       </View>
     );
   }
 
-  if (error && !state) {
+  /*
+   * ===================================================
+   * ERROR
+   * ===================================================
+   */
+
+  if (
+    error &&
+    !state
+  ) {
     return (
-      <View style={styles.wrap}>
-        <Text style={styles.sectionTitle}>Live trashcan</Text>
-        <Text style={styles.sectionText}>
-          The HC-SR04 sends the distance to the trash. The ESP32 camera checks that reading.
+      <View
+        style={
+          styles.wrap
+        }
+      >
+        <Text
+          style={
+            styles.sectionTitle
+          }
+        >
+          Live trashcan
         </Text>
-        <View style={styles.bannerCheck}>
-          <Ionicons name="alert-circle-outline" size={18} color="#E65100" />
-          <Text style={styles.bannerText}>
-            Sensor and camera data could not be loaded. Run
-            supabase/migrations/20261003120000_bin_monitor.sql in the Supabase
-            SQL Editor, then pull to refresh. {error}
+
+        <Text
+          style={
+            styles.sectionText
+          }
+        >
+          The HC-SR04 sends the
+          distance to the trash.
+          Fill is calculated from
+          that measurement.
+        </Text>
+
+        <View
+          style={
+            styles.bannerCheck
+          }
+        >
+          <Ionicons
+            name="alert-circle-outline"
+            size={20}
+            color="#E65100"
+          />
+
+          <Text
+            style={
+              styles.bannerText
+            }
+          >
+            Sensor and camera data
+            could not be loaded.
+            {` ${error}`}
           </Text>
         </View>
       </View>
     );
   }
 
+  /*
+   * ===================================================
+   * MAIN UI
+   * ===================================================
+   */
+
   return (
-    <View style={styles.wrap}>
-      <Text style={styles.sectionTitle}>Live trashcan</Text>
-      <Text style={styles.sectionText}>
-        The HC-SR04 sends the distance to the trash. Fill is calculated from that
-        measurement. Full starts at {FULL_PERCENT}% of a {BIN_HEIGHT_CM} cm bin.
+    <View
+      style={
+        styles.wrap
+      }
+    >
+      <Text
+        style={
+          styles.sectionTitle
+        }
+      >
+        Live trashcan
+      </Text>
+
+      <Text
+        style={
+          styles.sectionText
+        }
+      >
+        The HC-SR04 sends the
+        distance to the trash.
+        Fill is calculated from
+        that measurement. Full
+        starts at {FULL_PERCENT}%
+        of a {BIN_HEIGHT_CM} cm
+        bin.
       </Text>
 
       {error ? (
-        <View style={styles.bannerCheck}>
-          <Ionicons name="alert-circle-outline" size={18} color="#E65100" />
-          <Text style={styles.bannerText}>
-            Sensor and camera data could not be loaded. If this is the first
-            setup, run supabase/migrations/20261003120000_bin_monitor.sql in
-            the Supabase SQL Editor, then pull to refresh. {error}
+        <View
+          style={
+            styles.bannerCheck
+          }
+        >
+          <Ionicons
+            name="alert-circle-outline"
+            size={20}
+            color="#E65100"
+          />
+
+          <Text
+            style={
+              styles.bannerText
+            }
+          >
+            Sensor and camera data
+            could not be loaded.
+            {` ${error}`}
           </Text>
         </View>
       ) : null}
@@ -256,489 +683,1150 @@ export default function BinMonitor({ reloadKey = 0 }: BinMonitorProps) {
       {state?.banner ? (
         <View
           style={
-            state.banner.level === 'full'
+            state.banner.level ===
+            'full'
               ? styles.bannerFull
               : styles.bannerCheck
           }
         >
           <Ionicons
             name={
-              state.banner.level === 'full'
+              state.banner.level ===
+              'full'
                 ? 'warning-outline'
                 : 'eye-outline'
             }
-            size={18}
-            color={state.banner.level === 'full' ? '#B71C1C' : '#E65100'}
+            size={20}
+            color={
+              state.banner.level ===
+              'full'
+                ? '#B71C1C'
+                : '#E65100'
+            }
           />
-          <Text style={styles.bannerText}>{state.banner.text}</Text>
+
+          <Text
+            style={
+              styles.bannerText
+            }
+          >
+            {state.banner.text}
+          </Text>
         </View>
       ) : null}
 
-      <View style={styles.measureCard}>
-        <View style={styles.binVisual}>
-          <View style={styles.binLid} />
-          <View style={styles.binBody}>
+      {/* =================================================
+          ONE LIVE TRASHCAN
+          ================================================= */}
+
+      <View
+        style={
+          styles.liveCard
+        }
+      >
+        {/* HEADER */}
+
+        <View
+          style={
+            styles.liveHeader
+          }
+        >
+          <View
+            style={[
+              styles.liveIconContainer,
+              {
+                backgroundColor:
+                  sensor?.is_full
+                    ? '#FCEAEA'
+                    : '#E8F5E9',
+              },
+            ]}
+          >
+            <Ionicons
+              name={getWasteIcon(
+                bin?.waste_type
+              )}
+              size={30}
+              color={
+                sensor?.is_full
+                  ? '#C62828'
+                  : '#537B2F'
+              }
+            />
+          </View>
+
+          <View
+            style={
+              styles.liveTitleArea
+            }
+          >
+            <Text
+              style={
+                styles.liveTitle
+              }
+            >
+              {bin?.name ??
+                'Live Trashcan 01'}
+            </Text>
+
+            <Text
+              style={
+                styles.liveSubtitle
+              }
+            >
+              {bin?.waste_type ??
+                'Recyclable'}
+            </Text>
+          </View>
+
+          <Text
+            style={[
+              styles.liveStatus,
+              {
+                color:
+                  statusColor,
+              },
+            ]}
+          >
+            {sensor
+              ? sensor.is_full
+                ? 'FULL'
+                : 'AVAILABLE'
+              : 'WAITING'}
+          </Text>
+        </View>
+
+        {/* CAPACITY */}
+
+        <View
+          style={
+            styles.capacityRow
+          }
+        >
+          <Text
+            style={[
+              styles.capacityValue,
+              {
+                color:
+                  statusColor,
+              },
+            ]}
+          >
+            {sensor
+              ? `${sensor.fill_percent}%`
+              : '—'}
+          </Text>
+
+          <Text
+            style={
+              styles.capacityLabel
+            }
+          >
+            Capacity
+          </Text>
+        </View>
+
+        {/* PROGRESS */}
+
+        <View
+          style={
+            styles.progressBackground
+          }
+        >
+          <View
+            style={[
+              styles.progressFill,
+              {
+                width:
+                  `${fill}%`,
+                backgroundColor:
+                  statusColor,
+              },
+            ]}
+          />
+        </View>
+
+        {/* SENSOR */}
+
+        <View
+          style={
+            styles.sensorInfoRow
+          }
+        >
+          <View
+            style={
+              styles.sensorInfo
+            }
+          >
+            <Ionicons
+              name="radio-outline"
+              size={19}
+              color="#777777"
+            />
+
+            <Text
+              style={
+                styles.sensorInfoText
+              }
+            >
+              HC-SR04:{' '}
+              {sensor?.distance_cm !=
+              null
+                ? `${sensor.distance_cm} cm`
+                : '—'}
+            </Text>
+          </View>
+
+          <View
+            style={
+              styles.sensorInfo
+            }
+          >
+            <Ionicons
+              name="pulse-outline"
+              size={19}
+              color="#777777"
+            />
+
+            <Text
+              style={
+                styles.sensorInfoText
+              }
+            >
+              {statusLabel}
+            </Text>
+          </View>
+        </View>
+
+        {/* LOCATION + LAST UPDATED */}
+
+        <View
+          style={
+            styles.detailsRow
+          }
+        >
+          {/* LOCATION */}
+
+          <View
+            style={
+              styles.detailItem
+            }
+          >
+            <Ionicons
+              name="location-outline"
+              size={21}
+              color="#777777"
+            />
+
+            <View
+              style={
+                styles.detailTextContainer
+              }
+            >
+              <Text
+                style={
+                  styles.detailLabel
+                }
+              >
+                Location
+              </Text>
+
+              <Text
+                style={
+                  styles.detailValue
+                }
+                numberOfLines={2}
+              >
+                {bin?.location ??
+                  '—'}
+              </Text>
+            </View>
+          </View>
+
+          {/* LAST UPDATED */}
+
+          <View
+            style={
+              styles.detailItem
+            }
+          >
+            <Ionicons
+              name="time-outline"
+              size={21}
+              color="#777777"
+            />
+
+            <View
+              style={
+                styles.detailTextContainer
+              }
+            >
+              <Text
+                style={
+                  styles.detailLabel
+                }
+              >
+                Last updated
+              </Text>
+
+              <Text
+                style={
+                  styles.detailValue
+                }
+                numberOfLines={2}
+              >
+                {sensor
+                  ? clock(
+                      sensor.updated_at
+                    )
+                  : 'Waiting for a reading'}
+              </Text>
+            </View>
+          </View>
+        </View>
+      </View>
+
+      {/* =================================================
+          STATISTICS
+          ================================================= */}
+
+      <View
+        style={
+          styles.stats
+        }
+      >
+        <Stat
+          label="Readings today"
+          value={String(
+            analytics
+              ?.readings_today ??
+              0
+          )}
+        />
+
+        <Stat
+          label="Average fill"
+          value={percentOrDash(
+            analytics
+              ?.average_fill
+          )}
+        />
+
+        <Stat
+          label="Peak fill"
+          value={percentOrDash(
+            analytics
+              ?.peak_fill
+          )}
+        />
+
+        <Stat
+          label="Full alerts today"
+          value={String(
+            analytics
+              ?.full_alerts_today ??
+              0
+          )}
+        />
+      </View>
+
+      {/* =================================================
+          FILL OVER TIME
+          ================================================= */}
+
+      <View
+        style={
+          styles.card
+        }
+      >
+        <Text
+          style={
+            styles.cardTitle
+          }
+        >
+          Fill over time
+        </Text>
+
+        <Text
+          style={
+            styles.cardHint
+          }
+        >
+          Each bar comes from
+          one HC-SR04 measurement.
+        </Text>
+
+        {chartPoints.length ===
+        0 ? (
+          <Text
+            style={
+              styles.empty
+            }
+          >
+            The chart appears after
+            the first sensor reading.
+          </Text>
+        ) : (
+          <View
+            style={
+              styles.chart
+            }
+          >
+            {chartPoints.map(
+              (
+                point,
+                index
+              ) => (
+                <View
+                  key={`${point.at}-${index}`}
+                  style={
+                    styles.barSlot
+                  }
+                >
+                  <View
+                    style={[
+                      styles.bar,
+                      {
+                        height:
+                          `${Math.max(
+                            4,
+                            Math.min(
+                              100,
+                              point.fill_percent
+                            )
+                          )}%`,
+
+                        backgroundColor:
+                          point.is_full
+                            ? '#C62828'
+                            : '#2E7D32',
+                      },
+                    ]}
+                  />
+                </View>
+              )
+            )}
+
             <View
               style={[
-                styles.binFill,
+                styles.threshold,
                 {
-                  height: `${fill}%`,
-                  backgroundColor: sensor?.is_full ? '#C62828' : '#2E7D32',
+                  bottom:
+                    `${FULL_PERCENT}%`,
                 },
               ]}
             />
           </View>
-        </View>
-
-        <View style={styles.measureCopy}>
-          <Text style={styles.label}>HC-SR04 measurement</Text>
-          <Text style={[styles.fillValue, { color: statusColor }]}>
-            {sensor?.distance_cm === null || sensor?.distance_cm === undefined
-              ? '—'
-              : `${sensor.distance_cm}`}
-            {sensor?.distance_cm === null || sensor?.distance_cm === undefined ? null : (
-              <Text style={styles.unit}> cm</Text>
-            )}
-          </Text>
-          <Text style={styles.distance}>
-            {sensor
-              ? `${sensor.fill_percent}% full, measured to the trash`
-              : 'Waiting for the HC-SR04'}
-          </Text>
-          <View style={[styles.pill, { backgroundColor: statusBackground }]}>
-            <Text style={[styles.pillText, { color: statusColor }]}>
-              {statusLabel}
-            </Text>
-          </View>
-          <Text style={styles.updated}>
-            {sensor ? `Updated ${clock(sensor.updated_at)}` : 'Waiting for a reading'}
-          </Text>
-        </View>
-      </View>
-
-      <View style={styles.stats}>
-        <Stat label="Readings today" value={String(analytics?.readings_today ?? 0)} />
-        <Stat label="Average fill" value={percentOrDash(analytics?.average_fill)} />
-        <Stat label="Peak fill" value={percentOrDash(analytics?.peak_fill)} />
-        <Stat
-          label="Full alerts today"
-          value={String(analytics?.full_alerts_today ?? 0)}
-        />
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Fill over time</Text>
-        <Text style={styles.cardHint}>Each bar comes from one HC-SR04 measurement.</Text>
-        {chartPoints.length === 0 ? (
-          <Text style={styles.empty}>
-            The chart appears after the first sensor reading.
-          </Text>
-        ) : (
-          <View style={styles.chart}>
-            {chartPoints.map((point, index) => (
-              <View key={`${point.at}-${index}`} style={styles.barSlot}>
-                <View
-                  style={[
-                    styles.bar,
-                    {
-                      height: `${Math.max(4, Math.min(100, point.fill_percent))}%`,
-                      backgroundColor: point.is_full ? '#C62828' : '#2E7D32',
-                    },
-                  ]}
-                />
-              </View>
-            ))}
-            <View
-              style={[
-                styles.threshold,
-                { bottom: `${FULL_PERCENT}%` },
-              ]}
-            />
-          </View>
         )}
       </View>
 
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Camera check</Text>
-        <Text style={styles.cardHint}>
-          The ESP32-CAM confirms whether the bin looks full.
+      {/* =================================================
+          CAMERA CHECK
+          ================================================= */}
+
+      <View
+        style={
+          styles.card
+        }
+      >
+        <Text
+          style={
+            styles.cardTitle
+          }
+        >
+          Camera check
         </Text>
-        <View style={styles.cameraFrame}>
+
+        <Text
+          style={
+            styles.cardHint
+          }
+        >
+          The ESP32-CAM confirms
+          whether the same trashcan
+          looks full.
+        </Text>
+
+        <View
+          style={
+            styles.cameraFrame
+          }
+        >
           {camera?.image ? (
             <Image
               source={{
-                uri: `${camera.image}${camera.image.includes('?') ? '&' : '?'}t=${encodeURIComponent(camera.updated_at)}`,
+                uri: `${camera.image}${
+                  camera.image.includes(
+                    '?'
+                  )
+                    ? '&'
+                    : '?'
+                }t=${encodeURIComponent(
+                  camera.updated_at
+                )}`,
               }}
-              style={styles.cameraImage}
+              style={
+                styles.cameraImage
+              }
               contentFit="cover"
             />
           ) : (
-            <View style={styles.cameraEmpty}>
-              <Ionicons name="camera-outline" size={28} color="#8A8A8A" />
-              <Text style={styles.empty}>No photo yet</Text>
+            <View
+              style={
+                styles.cameraEmpty
+              }
+            >
+              <Ionicons
+                name="camera-outline"
+                size={32}
+                color="#8A8A8A"
+              />
+
+              <Text
+                style={
+                  styles.empty
+                }
+              >
+                No photo yet
+              </Text>
             </View>
           )}
         </View>
-        <Text style={styles.cameraResult}>
-          {!camera || camera.is_full === null
+
+        <Text
+          style={
+            styles.cameraResult
+          }
+        >
+          {!camera ||
+          camera.is_full === null
             ? camera?.image
               ? 'Photo received. The camera has not sent a full or not-full result.'
               : 'Waiting for the camera.'
             : camera.is_full
-              ? `Camera result: the trashcan looks full. ${clock(camera.updated_at)}`
-              : `Camera result: the trashcan does not look full. ${clock(camera.updated_at)}`}
+              ? `Camera result: the same trashcan looks full. ${clock(
+                  camera.updated_at
+                )}`
+              : `Camera result: the same trashcan does not look full. ${clock(
+                  camera.updated_at
+                )}`}
         </Text>
       </View>
 
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>HC-SR04 measurements</Text>
-        <Text style={styles.cardHint}>Newest distance from the ultrasonic sensor.</Text>
-        {recent.length === 0 ? (
-          <Text style={styles.empty}>No HC-SR04 measurements yet.</Text>
+      {/* =================================================
+          HC-SR04 MEASUREMENTS
+          ================================================= */}
+
+      <View
+        style={
+          styles.card
+        }
+      >
+        <Text
+          style={
+            styles.cardTitle
+          }
+        >
+          HC-SR04 measurements
+        </Text>
+
+        <Text
+          style={
+            styles.cardHint
+          }
+        >
+          Newest distance readings
+          from the same trashcan.
+        </Text>
+
+        {recent.length ===
+        0 ? (
+          <Text
+            style={
+              styles.empty
+            }
+          >
+            No HC-SR04 measurements
+            yet.
+          </Text>
         ) : (
-          recent.map((point, index) => (
-            <View key={`${point.at}-${index}`} style={styles.row}>
-              <View style={styles.rowMain}>
-                <Text style={styles.rowValue}>
-                  {point.distance_cm === null ? '—' : `${point.distance_cm} cm`}
-                </Text>
-                <Text style={styles.rowMeta}>
-                  {point.fill_percent}% full
-                  {' · '}
-                  {clock(point.at)}
-                </Text>
-              </View>
-              <Text
-                style={[
-                  styles.rowStatus,
-                  { color: point.is_full ? '#C62828' : '#2E7D32' },
-                ]}
+          recent.map(
+            (
+              point,
+              index
+            ) => (
+              <View
+                key={`${point.at}-${index}`}
+                style={
+                  styles.row
+                }
               >
-                {point.is_full ? 'Full' : 'Not full'}
-              </Text>
-            </View>
-          ))
-        )}
-      </View>
+                <View
+                  style={
+                    styles.rowMain
+                  }
+                >
+                  <Text
+                    style={
+                      styles.rowValue
+                    }
+                  >
+                    {point.distance_cm ===
+                    null
+                      ? '—'
+                      : `${point.distance_cm} cm`}
+                  </Text>
 
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Full notifications</Text>
-        <Text style={styles.cardHint}>Logged when the bin changes to full.</Text>
-        {(state?.alerts.length ?? 0) === 0 ? (
-          <Text style={styles.empty}>No full alerts yet.</Text>
-        ) : (
-          state?.alerts.map((alert, index) => (
-            <View key={`${alert.at}-${alert.source}-${index}`} style={styles.alertRow}>
-              <Ionicons
-                name={alert.source === 'camera' ? 'camera-outline' : 'pulse-outline'}
-                size={16}
-                color="#1B5E20"
-              />
-              <View style={styles.alertCopy}>
-                <Text style={styles.alertMessage}>{alert.message}</Text>
-                <Text style={styles.rowMeta}>{clock(alert.at)}</Text>
+                  <Text
+                    style={
+                      styles.rowMeta
+                    }
+                  >
+                    {point.fill_percent}%
+                    {' full · '}
+                    {clock(
+                      point.at
+                    )}
+                  </Text>
+                </View>
+
+                <Text
+                  style={[
+                    styles.rowStatus,
+                    {
+                      color:
+                        point.is_full
+                          ? '#C62828'
+                          : '#2E7D32',
+                    },
+                  ]}
+                >
+                  {point.is_full
+                    ? 'Full'
+                    : 'Not full'}
+                </Text>
               </View>
-            </View>
-          ))
+            )
+          )
+        )}
+      </View>
+
+      {/* =================================================
+          FULL NOTIFICATIONS
+          ================================================= */}
+
+      <View
+        style={
+          styles.card
+        }
+      >
+        <Text
+          style={
+            styles.cardTitle
+          }
+        >
+          Full notifications
+        </Text>
+
+        <Text
+          style={
+            styles.cardHint
+          }
+        >
+          Logged when this trashcan
+          changes to full.
+        </Text>
+
+        {(state?.alerts.length ??
+          0) === 0 ? (
+          <Text
+            style={
+              styles.empty
+            }
+          >
+            No full alerts yet.
+          </Text>
+        ) : (
+          state?.alerts.map(
+            (
+              alert,
+              index
+            ) => (
+              <View
+                key={`${alert.at}-${alert.source}-${index}`}
+                style={
+                  styles.alertRow
+                }
+              >
+                <Ionicons
+                  name={
+                    alert.source ===
+                    'camera'
+                      ? 'camera-outline'
+                      : 'pulse-outline'
+                  }
+                  size={18}
+                  color="#1B5E20"
+                />
+
+                <View
+                  style={
+                    styles.alertCopy
+                  }
+                >
+                  <Text
+                    style={
+                      styles.alertMessage
+                    }
+                  >
+                    {alert.message}
+                  </Text>
+
+                  <Text
+                    style={
+                      styles.rowMeta
+                    }
+                  >
+                    {clock(
+                      alert.at
+                    )}
+                  </Text>
+                </View>
+              </View>
+            )
+          )
         )}
       </View>
     </View>
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+/*
+ * =====================================================
+ * STAT
+ * =====================================================
+ */
+
+function Stat({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
   return (
-    <View style={styles.stat}>
-      <Text style={styles.label}>{label}</Text>
-      <Text style={styles.statValue}>{value}</Text>
+    <View
+      style={
+        styles.stat
+      }
+    >
+      <Text
+        style={
+          styles.label
+        }
+      >
+        {label}
+      </Text>
+
+      <Text
+        style={
+          styles.statValue
+        }
+      >
+        {value}
+      </Text>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  wrap: {
-    paddingHorizontal: 20,
-    paddingTop: 8,
-  },
+/*
+ * =====================================================
+ * STYLES
+ * =====================================================
+ */
 
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#222222',
-  },
+const styles =
+  StyleSheet.create({
+    wrap: {
+      paddingHorizontal: 20,
+      paddingTop: 8,
+    },
 
-  sectionText: {
-    color: '#666666',
-    fontSize: 13,
-    lineHeight: 19,
-    marginTop: 4,
-    marginBottom: 12,
-  },
+    sectionTitle: {
+      fontSize: 20,
+      fontWeight: 'bold',
+      color: '#222222',
+    },
 
-  loading: {
-    marginTop: 16,
-    marginBottom: 16,
-  },
+    sectionText: {
+      color: '#666666',
+      fontSize: 13,
+      lineHeight: 19,
+      marginTop: 4,
+      marginBottom: 12,
+    },
 
-  bannerFull: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-    backgroundColor: '#FFEBEE',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 12,
-  },
+    loading: {
+      marginTop: 16,
+      marginBottom: 16,
+    },
 
-  bannerCheck: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-    backgroundColor: '#FFF3E0',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 12,
-  },
+    /*
+     * BANNERS
+     */
 
-  bannerText: {
-    flex: 1,
-    color: '#333333',
-    fontSize: 13,
-    lineHeight: 18,
-  },
+    bannerFull: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 8,
+      backgroundColor: '#FFEBEE',
+      borderRadius: 12,
+      padding: 12,
+      marginBottom: 12,
+    },
 
-  measureCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
+    bannerCheck: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 8,
+      backgroundColor: '#FFF3E0',
+      borderRadius: 12,
+      padding: 12,
+      marginBottom: 12,
+    },
 
-  binVisual: {
-    width: 72,
-    alignItems: 'center',
-    marginRight: 16,
-  },
+    bannerText: {
+      flex: 1,
+      color: '#333333',
+      fontSize: 13,
+      lineHeight: 18,
+    },
 
-  binLid: {
-    width: 64,
-    height: 10,
-    borderRadius: 6,
-    backgroundColor: '#1B5E20',
-    marginBottom: 4,
-  },
+    /*
+     * LIVE CARD
+     */
 
-  binBody: {
-    width: 52,
-    height: 88,
-    borderRadius: 8,
-    borderWidth: 3,
-    borderColor: '#1B5E20',
-    backgroundColor: '#F5F7F5',
-    overflow: 'hidden',
-    justifyContent: 'flex-end',
-  },
+    liveCard: {
+      backgroundColor: '#FFFFFF',
+      borderRadius: 18,
+      padding: 18,
+      marginBottom: 12,
 
-  binFill: {
-    width: '100%',
-  },
+      shadowColor: '#000',
 
-  measureCopy: {
-    flex: 1,
-  },
+      shadowOffset: {
+        width: 0,
+        height: 2,
+      },
 
-  label: {
-    fontSize: 12,
-    color: '#888888',
-  },
+      shadowOpacity: 0.08,
+      shadowRadius: 6,
 
-  fillValue: {
-    fontSize: 34,
-    fontWeight: 'bold',
-    marginTop: 2,
-  },
+      elevation: 3,
+    },
 
-  unit: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
+    liveHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
 
-  distance: {
-    color: '#555555',
-    fontSize: 13,
-    marginTop: 4,
-    lineHeight: 18,
-  },
+    liveIconContainer: {
+      width: 52,
+      height: 52,
+      borderRadius: 26,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: 14,
+    },
 
-  pill: {
-    alignSelf: 'flex-start',
-    borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    marginTop: 10,
-  },
+    liveTitleArea: {
+      flex: 1,
+    },
 
-  pillText: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
+    liveTitle: {
+      fontSize: 18,
+      fontWeight: '700',
+      color: '#222222',
+    },
 
-  updated: {
-    color: '#999999',
-    fontSize: 11,
-    marginTop: 8,
-  },
+    liveSubtitle: {
+      fontSize: 13,
+      color: '#888888',
+      marginTop: 2,
+    },
 
-  stats: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 4,
-  },
+    liveStatus: {
+      fontSize: 13,
+      fontWeight: '800',
+    },
 
-  stat: {
-    width: '48%',
-    flexGrow: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 14,
-  },
+    capacityRow: {
+      flexDirection: 'row',
+      alignItems: 'baseline',
+      marginTop: 18,
+    },
 
-  statValue: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#1B5E20',
-    marginTop: 4,
-  },
+    capacityValue: {
+      fontSize: 38,
+      fontWeight: 'bold',
+    },
 
-  card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    marginTop: 8,
-  },
+    capacityLabel: {
+      fontSize: 14,
+      color: '#888888',
+      marginLeft: 8,
+    },
 
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#222222',
-  },
+    progressBackground: {
+      height: 12,
+      borderRadius: 8,
+      backgroundColor: '#E4E4E4',
+      overflow: 'hidden',
+      marginTop: 10,
+    },
 
-  cardHint: {
-    color: '#888888',
-    fontSize: 12,
-    marginTop: 3,
-    marginBottom: 12,
-  },
+    progressFill: {
+      height: '100%',
+      borderRadius: 8,
+    },
 
-  empty: {
-    color: '#888888',
-    fontSize: 13,
-    marginTop: 8,
-  },
+    /*
+     * SENSOR INFO
+     */
 
-  chart: {
-    height: 140,
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 4,
-    position: 'relative',
-    marginTop: 8,
-  },
+    sensorInfoRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      flexWrap: 'wrap',
+      gap: 10,
+      marginTop: 14,
+    },
 
-  threshold: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    height: 1,
-    backgroundColor: '#E2D5BC',
-    zIndex: 1,
-  },
+    sensorInfo: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
 
-  barSlot: {
-    flex: 1,
-    height: '100%',
-    justifyContent: 'flex-end',
-  },
+    sensorInfoText: {
+      fontSize: 13,
+      color: '#555555',
+    },
 
-  bar: {
-    width: '100%',
-    borderRadius: 4,
-    minHeight: 4,
-  },
+    /*
+     * LOCATION + LAST UPDATED
+     */
 
-  cameraFrame: {
-    height: 180,
-    borderRadius: 12,
-    overflow: 'hidden',
-    backgroundColor: '#F3F5F3',
-  },
+    detailsRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      gap: 18,
+      marginTop: 16,
+      paddingTop: 14,
+      borderTopWidth: 1,
+      borderTopColor: '#F0F0F0',
+    },
 
-  cameraImage: {
-    width: '100%',
-    height: '100%',
-  },
+    detailItem: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 9,
+    },
 
-  cameraEmpty: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+    detailTextContainer: {
+      flex: 1,
+    },
 
-  cameraResult: {
-    color: '#444444',
-    fontSize: 13,
-    lineHeight: 18,
-    marginTop: 10,
-  },
+    detailLabel: {
+      fontSize: 12,
+      color: '#888888',
+      marginBottom: 3,
+    },
 
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#F0F0F0',
-  },
+    detailValue: {
+      fontSize: 13,
+      color: '#555555',
+      lineHeight: 18,
+    },
 
-  rowMain: {
-    flex: 1,
-  },
+    /*
+     * STATISTICS
+     */
 
-  rowValue: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#222222',
-  },
+    stats: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+      marginBottom: 4,
+    },
 
-  rowMeta: {
-    color: '#888888',
-    fontSize: 12,
-    marginTop: 2,
-  },
+    stat: {
+      width: '48%',
+      flexGrow: 1,
+      backgroundColor: '#FFFFFF',
+      borderRadius: 14,
+      padding: 14,
+    },
 
-  rowStatus: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
+    label: {
+      fontSize: 12,
+      color: '#888888',
+    },
 
-  alertRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-    paddingVertical: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#F0F0F0',
-  },
+    statValue: {
+      fontSize: 22,
+      fontWeight: 'bold',
+      color: '#1B5E20',
+      marginTop: 4,
+    },
 
-  alertCopy: {
-    flex: 1,
-  },
+    /*
+     * GENERAL CARD
+     */
 
-  alertMessage: {
-    color: '#333333',
-    fontSize: 13,
-    lineHeight: 18,
-  },
-});
+    card: {
+      backgroundColor: '#FFFFFF',
+      borderRadius: 16,
+      padding: 16,
+      marginTop: 8,
+    },
+
+    cardTitle: {
+      fontSize: 16,
+      fontWeight: '700',
+      color: '#222222',
+    },
+
+    cardHint: {
+      color: '#888888',
+      fontSize: 12,
+      marginTop: 3,
+      marginBottom: 12,
+    },
+
+    empty: {
+      color: '#888888',
+      fontSize: 13,
+      marginTop: 8,
+    },
+
+    /*
+     * CHART
+     */
+
+    chart: {
+      height: 140,
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      gap: 4,
+      position: 'relative',
+      marginTop: 8,
+    },
+
+    threshold: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      height: 1,
+      backgroundColor: '#E2D5BC',
+      zIndex: 1,
+    },
+
+    barSlot: {
+      flex: 1,
+      height: '100%',
+      justifyContent: 'flex-end',
+    },
+
+    bar: {
+      width: '100%',
+      borderRadius: 4,
+      minHeight: 4,
+    },
+
+    /*
+     * CAMERA
+     */
+
+    cameraFrame: {
+      height: 180,
+      borderRadius: 12,
+      overflow: 'hidden',
+      backgroundColor: '#F3F5F3',
+    },
+
+    cameraImage: {
+      width: '100%',
+      height: '100%',
+    },
+
+    cameraEmpty: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+
+    cameraResult: {
+      color: '#444444',
+      fontSize: 13,
+      lineHeight: 18,
+      marginTop: 10,
+    },
+
+    /*
+     * MEASUREMENTS
+     */
+
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 10,
+      borderTopWidth: 1,
+      borderTopColor: '#F0F0F0',
+    },
+
+    rowMain: {
+      flex: 1,
+    },
+
+    rowValue: {
+      fontSize: 16,
+      fontWeight: '700',
+      color: '#222222',
+    },
+
+    rowMeta: {
+      color: '#888888',
+      fontSize: 12,
+      marginTop: 2,
+    },
+
+    rowStatus: {
+      fontSize: 12,
+      fontWeight: '700',
+    },
+
+    /*
+     * ALERTS
+     */
+
+    alertRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 8,
+      paddingVertical: 8,
+      borderTopWidth: 1,
+      borderTopColor: '#F0F0F0',
+    },
+
+    alertCopy: {
+      flex: 1,
+    },
+
+    alertMessage: {
+      color: '#333333',
+      fontSize: 13,
+      lineHeight: 18,
+    },
+  });

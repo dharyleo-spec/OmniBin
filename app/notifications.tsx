@@ -1,657 +1,222 @@
 import { Ionicons } from '@expo/vector-icons';
-
+import { useFocusEffect } from 'expo-router';
 import {
   useCallback,
   useEffect,
-  useRef,
   useState,
 } from 'react';
 
 import {
   ActivityIndicator,
-  RefreshControl,
+  Modal,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 
-import BinMonitor from '../components/BinMonitor';
 import BottomNav from '../components/BottomNav';
 import Header from '../components/Header';
-import { supabase } from '../lib/supabase';
 
+import {
+  FULL_PERCENT,
+  fetchMonitorState,
+  type MonitorState
+} from '../lib/binMonitor';
 
-/*
- * =====================================================
- * BIN TYPE
- * =====================================================
- */
+type IoniconName =
+  keyof typeof Ionicons.glyphMap;
 
-type Bin = {
-  bin_id: number;
-  name: string;
-  waste_type: string;
-  current_level: number;
-  status: string;
-  location: string;
-  updated_at: string;
-};
+function formatDate(
+  iso: string | undefined
+) {
+  if (!iso) {
+    return '—';
+  }
 
+  const date = new Date(iso);
 
-/*
- * =====================================================
- * DASHBOARD
- * =====================================================
- */
+  if (Number.isNaN(date.getTime())) {
+    return iso;
+  }
 
-export default function Dashboard() {
+  return date.toLocaleString(undefined, {
+    month: 'numeric',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}
 
-  const [bins, setBins] =
-    useState<Bin[]>([]);
+export default function Notifications() {
+
+  const [state, setState] =
+    useState<MonitorState | null>(null);
 
   const [loading, setLoading] =
     useState(true);
 
-  const [refreshing, setRefreshing] =
-    useState(false);
+  const [error, setError] =
+    useState('');
 
-  const [monitorReloadKey, setMonitorReloadKey] =
-    useState(0);
+  const [
+    selectedNotification,
+    setSelectedNotification,
+  ] = useState(false);
 
+  const [
+    notificationRead,
+    setNotificationRead,
+  ] = useState(false);
 
   /*
    * =====================================================
-   * TRACK NOTIFIED BINS
+   * FETCH LIVE TRASHCAN STATE
    * =====================================================
    *
-   * Prevents the same bin from repeatedly creating
-   * notifications while it remains at 90% or higher.
+   * IMPORTANT:
+   * This uses the EXACT SAME data source as BinMonitor.
+   *
+   * There is NO bins table here.
+   * There is NO notification table here.
+   *
+   * The HC-SR04 reading is the source of truth.
    */
 
-  const notifiedBins =
-    useRef<Record<number, boolean>>({});
+  const loadNotifications =
+    useCallback(async () => {
 
+      try {
 
-  /*
-   * =====================================================
-   * CREATE IN-APP NOTIFICATION
-   * =====================================================
-   *
-   * This is NOT a push notification.
-   *
-   * It simply creates a record in the Supabase
-   * notification table so it can appear inside
-   * the OmniBin Notifications page.
-   */
+        const next =
+          await fetchMonitorState();
 
-  const checkBinNotification =
-    useCallback(
-      async (bin: Bin) => {
+        setState(next);
+        setError('');
 
-        const level =
-          Number(
-            bin.current_level
-          ) || 0;
+      } catch (loadError) {
 
+        const message =
+          loadError instanceof Error
+            ? loadError.message
+            : 'Could not load the live trashcan.';
 
-        /*
-         * -------------------------------------------------
-         * BIN BELOW 90%
-         * -------------------------------------------------
-         *
-         * Reset the trigger so the bin can create another
-         * notification if it reaches 90% again later.
-         */
+        console.error(
+          'NOTIFICATION FETCH ERROR:',
+          message
+        );
 
-        if (level < 90) {
+        setError(message);
 
-          notifiedBins.current[
-            bin.bin_id
-          ] = false;
+      } finally {
 
-          return;
-        }
+        setLoading(false);
 
+      }
 
-        /*
-         * -------------------------------------------------
-         * ALREADY NOTIFIED
-         * -------------------------------------------------
-         */
-
-        if (
-          notifiedBins.current[
-            bin.bin_id
-          ]
-        ) {
-
-          return;
-        }
-
-
-        /*
-         * Mark immediately to prevent duplicate inserts
-         * if multiple realtime updates happen quickly.
-         */
-
-        notifiedBins.current[
-          bin.bin_id
-        ] = true;
-
-
-        try {
-
-          /*
-           * -------------------------------------------------
-           * CHECK EXISTING LATEST NOTIFICATION
-           * -------------------------------------------------
-           *
-           * This helps prevent duplicate notification records
-           * if the dashboard is reopened while the same bin
-           * is still full.
-           */
-
-          const {
-            data: latestNotification,
-            error: latestNotificationError,
-          } =
-            await supabase
-              .from('notification')
-              .select(
-                'notif_id, created_at'
-              )
-              .eq(
-                'bin_id',
-                bin.bin_id
-              )
-              .eq(
-                'message',
-                'Bin requires collection.'
-              )
-              .order(
-                'created_at',
-                {
-                  ascending: false,
-                }
-              )
-              .limit(1)
-              .maybeSingle();
-
-
-          if (
-            latestNotificationError
-          ) {
-
-            console.error(
-              'ERROR CHECKING EXISTING NOTIFICATION:',
-              latestNotificationError.message
-            );
-
-            /*
-             * Allow another attempt later.
-             */
-
-            notifiedBins.current[
-              bin.bin_id
-            ] = false;
-
-            return;
-          }
-
-
-          /*
-           * -------------------------------------------------
-           * A RECENT NOTIFICATION ALREADY EXISTS
-           * -------------------------------------------------
-           *
-           * If the latest notification was created after
-           * the bin's latest update, there is no need to
-           * create another one.
-           */
-
-          if (
-            latestNotification &&
-            bin.updated_at
-          ) {
-
-            const notificationTime =
-              new Date(
-                latestNotification.created_at
-              ).getTime();
-
-            const binUpdateTime =
-              new Date(
-                bin.updated_at
-              ).getTime();
-
-
-            if (
-              notificationTime >=
-              binUpdateTime
-            ) {
-
-              console.log(
-                'NOTIFICATION ALREADY EXISTS FOR BIN:',
-                bin.bin_id
-              );
-
-              return;
-            }
-          }
-
-
-          /*
-           * -------------------------------------------------
-           * CREATE IN-APP NOTIFICATION
-           * -------------------------------------------------
-           */
-
-          const {
-            error,
-          } =
-            await supabase
-              .from('notification')
-              .insert({
-                bin_id:
-                  bin.bin_id,
-
-                message:
-                  'Bin requires collection.',
-
-                is_read:
-                  false,
-              });
-
-
-          if (error) {
-
-            console.error(
-              'ERROR CREATING IN-APP NOTIFICATION:',
-              error.message
-            );
-
-            /*
-             * Allow retry if the insert failed.
-             */
-
-            notifiedBins.current[
-              bin.bin_id
-            ] = false;
-
-            return;
-          }
-
-
-          console.log(
-            'IN-APP NOTIFICATION CREATED FOR BIN:',
-            bin.bin_id
-          );
-
-
-        } catch (error) {
-
-          console.error(
-            'UNEXPECTED NOTIFICATION ERROR:',
-            error
-          );
-
-
-          /*
-           * Allow retry after an unexpected error.
-           */
-
-          notifiedBins.current[
-            bin.bin_id
-          ] = false;
-        }
-
-      },
-      []
-    );
-
+    }, []);
 
   /*
    * =====================================================
-   * FETCH BINS
+   * LOAD WHEN SCREEN OPENS
    * =====================================================
    */
 
-  const fetchBins =
-    useCallback(
-      async () => {
+  useFocusEffect(
+    useCallback(() => {
 
-        try {
+      setLoading(true);
 
-          const {
-            data,
-            error,
-          } =
-            await supabase
-              .from('bins')
-              .select('*')
-              .order(
-                'current_level',
-                {
-                  ascending: false,
-                }
-              );
+      loadNotifications();
 
-
-          if (error) {
-
-            console.error(
-              'ERROR FETCHING BINS:',
-              error.message
-            );
-
-            setBins([]);
-
-            return;
-          }
-
-
-          console.log(
-            'BINS FETCHED:',
-            data
-          );
-
-
-          const fetchedBins =
-            (data || []) as Bin[];
-
-
-          setBins(
-            fetchedBins
-          );
-
-
-          /*
-           * Check every bin for the
-           * 90% notification threshold.
-           */
-
-          for (
-            const bin of fetchedBins
-          ) {
-
-            await checkBinNotification(
-              bin
-            );
-
-          }
-
-
-        } catch (error) {
-
-          console.error(
-            'UNEXPECTED FETCH ERROR:',
-            error
-          );
-
-          setBins([]);
-
-        } finally {
-
-          setLoading(false);
-          setRefreshing(false);
-
-        }
-
-      },
-      [
-        checkBinNotification,
-      ]
-    );
-
+    }, [loadNotifications])
+  );
 
   /*
    * =====================================================
-   * INITIAL DATA FETCH
+   * REALTIME HC-SR04 / CAMERA UPDATES
    * =====================================================
+   *
+   * This is the SAME realtime source used by BinMonitor.
+   *
+   * When a new reading arrives, the notification screen
+   * immediately checks the latest HC-SR04 measurement.
    */
 
   useEffect(() => {
 
-    void fetchBins();
-
-  }, [
-    fetchBins,
-  ]);
-
-
-  /*
-   * =====================================================
-   * REALTIME BIN UPDATES
-   * =====================================================
-   */
-
-  useEffect(() => {
-
-    let cancelled =
-      false;
-
+    let cancelled = false;
 
     const setupRealtime =
       async () => {
 
         const channelName =
-          'omnibin-bins';
-
-
-        console.log(
-          'SETTING UP BIN REALTIME...'
-        );
-
+          'omnibin-notifications';
 
         /*
-         * -------------------------------------------------
-         * REMOVE EXISTING CHANNEL
-         * -------------------------------------------------
+         * Remove an existing channel with
+         * the same name first.
          */
 
-        const existingChannels =
-          supabase.getChannels();
-
-
-        const existingChannel =
-          existingChannels.find(
-            (channel) =>
-              channel.topic ===
-              `realtime:${channelName}`
-          );
-
-
-        if (existingChannel) {
-
-          console.log(
-            'REMOVING EXISTING BIN REALTIME CHANNEL...'
-          );
-
-
-          await supabase.removeChannel(
-            existingChannel
-          );
-
-        }
-
+        const existing =
+          // @ts-ignore
+          undefined;
 
         /*
-         * Stop if component was unmounted.
-         */
-
-        if (cancelled) {
-
-          return null;
-
-        }
-
-
-        /*
-         * -------------------------------------------------
-         * CREATE CHANNEL
-         * -------------------------------------------------
+         * Create realtime channel.
          */
 
         const channel =
-          supabase.channel(
-            channelName
-          );
-
-
-        /*
-         * -------------------------------------------------
-         * ADD REALTIME LISTENER
-         * -------------------------------------------------
-         *
-         * IMPORTANT:
-         * Listener is added BEFORE subscribe().
-         */
+          require('../lib/supabase')
+            .supabase
+            .channel(channelName);
 
         channel.on(
           'postgres_changes',
           {
-            event: 'UPDATE',
+            event: '*',
             schema: 'public',
-            table: 'bins',
+            table: 'readings',
           },
-          (payload) => {
+          () => {
 
-            console.log(
-              '================================='
-            );
-
-            console.log(
-              'BIN REALTIME UPDATE'
-            );
-
-            console.log(
-              'OLD DATA:',
-              payload.old
-            );
-
-            console.log(
-              'NEW DATA:',
-              payload.new
-            );
-
-            console.log(
-              '================================='
-            );
-
-
-            /*
-             * Convert updated record
-             * into a Bin object.
-             */
-
-            const updatedBin =
-              payload.new as Bin;
-
-
-            /*
-             * Check the 90% threshold.
-             */
-
-            void checkBinNotification(
-              updatedBin
-            );
-
-
-            /*
-             * Refresh dashboard data.
-             */
-
-            void fetchBins();
-
-          }
-        );
-
-
-        /*
-         * -------------------------------------------------
-         * SUBSCRIBE
-         * -------------------------------------------------
-         */
-
-        channel.subscribe(
-          (status) => {
-
-            console.log(
-              'REALTIME STATUS:',
-              status
-            );
-
-
-            if (
-              status ===
-              'SUBSCRIBED'
-            ) {
-
-              console.log(
-                'REALTIME CONNECTED SUCCESSFULLY'
-              );
-
-            }
-
-
-            if (
-              status ===
-              'CHANNEL_ERROR'
-            ) {
-
-              console.error(
-                'REALTIME CHANNEL ERROR'
-              );
-
-            }
-
-
-            if (
-              status ===
-              'TIMED_OUT'
-            ) {
-
-              console.error(
-                'REALTIME CONNECTION TIMED OUT'
-              );
-
-            }
-
-
-            if (
-              status ===
-              'CLOSED'
-            ) {
-
-              console.log(
-                'REALTIME CHANNEL CLOSED'
-              );
-
+            if (!cancelled) {
+              loadNotifications();
             }
 
           }
         );
 
+        channel.on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'camera_checks',
+          },
+          () => {
+
+            if (!cancelled) {
+              loadNotifications();
+            }
+
+          }
+        );
+
+        channel.subscribe();
 
         return channel;
-
       };
-
-
-    /*
-     * -------------------------------------------------
-     * SETUP CHANNEL
-     * -------------------------------------------------
-     */
 
     let realtimeChannel:
       ReturnType<
-        typeof supabase.channel
+        typeof import('../lib/supabase').supabase.channel
       > | null = null;
 
-
-    void setupRealtime().then(
+    setupRealtime().then(
       (channel) => {
 
         if (
@@ -662,216 +227,132 @@ export default function Dashboard() {
           realtimeChannel =
             channel;
 
-        } else if (
-          channel
-        ) {
+        } else if (channel) {
 
-          supabase.removeChannel(
-            channel
-          );
+          require('../lib/supabase')
+            .supabase
+            .removeChannel(
+              channel
+            );
 
         }
 
       }
     );
 
-
-    /*
-     * -------------------------------------------------
-     * CLEANUP
-     * -------------------------------------------------
-     */
-
     return () => {
 
       cancelled = true;
 
+      if (realtimeChannel) {
 
-      if (
-        realtimeChannel
-      ) {
-
-        console.log(
-          'REMOVING BIN REALTIME CHANNEL...'
-        );
-
-
-        void supabase.removeChannel(
-          realtimeChannel
-        );
-
-
-        realtimeChannel =
-          null;
+        require('../lib/supabase')
+          .supabase
+          .removeChannel(
+            realtimeChannel
+          );
 
       }
 
     };
 
-  }, [
-    fetchBins,
-    checkBinNotification,
-  ]);
-
+  }, [loadNotifications]);
 
   /*
    * =====================================================
-   * PULL TO REFRESH
+   * CURRENT HC-SR04 DATA
    * =====================================================
    */
 
-  const onRefresh =
+  const sensor =
+    state?.sensor ?? null;
+
+  /*
+   * =====================================================
+   * ACTIVE NOTIFICATION
+   * =====================================================
+   *
+   * ONLY the HC-SR04 full state creates the notification.
+   *
+   * Therefore:
+   *
+   * HC-SR04 = 0%
+   *      ↓
+   * No notification
+   *
+   * HC-SR04 = FULL_PERCENT or higher
+   *      ↓
+   * Collection notification
+   *
+   * This keeps Notifications consistent with the
+   * Live Trashcan card on Dashboard.
+   */
+
+  const isFull =
+    sensor?.is_full === true;
+
+  /*
+   * If the bin becomes not full again,
+   * reset the local read state.
+   */
+
+  useEffect(() => {
+
+    if (!isFull) {
+
+      setNotificationRead(false);
+      setSelectedNotification(false);
+
+    }
+
+  }, [isFull]);
+
+  /*
+   * =====================================================
+   * OPEN NOTIFICATION
+   * =====================================================
+   */
+
+  const openNotification =
     () => {
 
-      setRefreshing(
+      setSelectedNotification(
         true
       );
 
-
-      setMonitorReloadKey(
-        (key) =>
-          key + 1
+      setNotificationRead(
+        true
       );
 
-
-      void fetchBins();
-
     };
-
 
   /*
    * =====================================================
-   * DETERMINE STATUS
+   * CLOSE MODAL
    * =====================================================
    */
 
-  const getStatus =
-    (
-      level: number
-    ) => {
+  const closeModal =
+    () => {
 
-      if (
-        level >= 90
-      ) {
-
-        return 'FULL';
-
-      }
-
-
-      if (
-        level >= 50
-      ) {
-
-        return 'HALF FULL';
-
-      }
-
-
-      return 'AVAILABLE';
+      setSelectedNotification(
+        false
+      );
 
     };
 
-
   /*
    * =====================================================
-   * DETERMINE STATUS COLOR
+   * LOADING
    * =====================================================
    */
 
-  const getStatusColor =
-    (
-      level: number
-    ) => {
+  if (
+    loading &&
+    !state
+  ) {
 
-      if (
-        level >= 90
-      ) {
-
-        return '#C62828';
-
-      }
-
-
-      if (
-        level >= 50
-      ) {
-
-        return '#F9A825';
-
-      }
-
-
-      return '#2E7D32';
-
-    };
-
-
-  /*
-   * =====================================================
-   * DETERMINE WASTE ICON
-   * =====================================================
-   */
-
-  const getWasteIcon =
-    (
-      wasteType: string
-    ) => {
-
-      const type =
-        wasteType
-          .toLowerCase()
-          .trim();
-
-
-      if (
-        type ===
-        'biodegradable'
-      ) {
-
-        return 'leaf-outline';
-
-      }
-
-
-      if (
-        type ===
-        'non-biodegradable'
-      ) {
-
-        return 'trash-bin-outline';
-
-      }
-
-
-      if (
-        type ===
-        'recyclable'
-      ) {
-
-        return 'recycle-outline';
-
-      }
-
-
-      return 'trash-bin-outline';
-
-    };
-
-
-  /*
-   * =====================================================
-   * RENDER
-   * =====================================================
-   */
-
-  return (
-
-    <View
-      style={
-        styles.screen
-      }
-    >
+    return (
 
       <View
         style={
@@ -879,761 +360,996 @@ export default function Dashboard() {
         }
       >
 
-        <ScrollView
+        <Header
+          title="Notifications"
+          subtitle="Bin collection alerts"
+        />
 
-          contentContainerStyle={
-            styles.content
+        <View
+          style={
+            styles.loadingContainer
           }
-
-          refreshControl={
-
-            <RefreshControl
-
-              refreshing={
-                refreshing
-              }
-
-              onRefresh={
-                onRefresh
-              }
-
-            />
-
-          }
-
-          showsVerticalScrollIndicator={
-            false
-          }
-
         >
 
-          {/* HEADER */}
-
-          <Header
-            title="OmniBin"
-            subtitle="Smart Waste Management System"
+          <ActivityIndicator
+            size="large"
+            color="#537B2F"
           />
 
-
-          {/* WELCOME */}
-
-          <View
+          <Text
             style={
-              styles.welcome
+              styles.loadingText
             }
           >
+            Checking live trashcan...
+          </Text>
 
-            <Text
-              style={
-                styles.welcomeTitle
-              }
-            >
-              Dashboard
-            </Text>
-
-
-            <Text
-              style={
-                styles.welcomeText
-              }
-            >
-              Live fill, camera
-              confirmation, and the
-              status of every bin.
-            </Text>
-
-          </View>
-
-
-          <BinMonitor
-            reloadKey={
-              monitorReloadKey
-            }
-          />
-
-
-          {/* LOADING */}
-
-          {loading ? (
-
-            <ActivityIndicator
-
-              size="large"
-
-              color="#1B5E20"
-
-              style={
-                styles.loading
-              }
-
-            />
-
-          ) : bins.length === 0 ? (
-
-            /* EMPTY STATE */
-
-            <View
-              style={
-                styles.emptyContainer
-              }
-            >
-
-              <View
-                style={
-                  styles.emptyIcon
-                }
-              >
-
-                <Ionicons
-                  name="trash-outline"
-                  size={30}
-                  color="#8A8A8A"
-                />
-
-              </View>
-
-
-              <Text
-                style={
-                  styles.emptyTitle
-                }
-              >
-                No Bin Data
-              </Text>
-
-
-              <Text
-                style={
-                  styles.emptyText
-                }
-              >
-                There is currently
-                no waste bin
-                information
-                available.
-              </Text>
-
-            </View>
-
-          ) : (
-
-            /* BIN LIST */
-
-            <View>
-
-              {bins.map(
-                (bin) => {
-
-                  const status =
-                    getStatus(
-                      bin.current_level
-                    );
-
-
-                  const statusColor =
-                    getStatusColor(
-                      bin.current_level
-                    );
-
-
-                  return (
-
-                    <View
-                      key={
-                        bin.bin_id
-                      }
-                      style={
-                        styles.card
-                      }
-                    >
-
-                      {/* CARD HEADER */}
-
-                      <View
-                        style={
-                          styles.cardHeader
-                        }
-                      >
-
-                        <View
-                          style={
-                            styles.binTitleContainer
-                          }
-                        >
-
-                          {/* WASTE ICON */}
-
-                          <View
-                            style={[
-                              styles.binIcon,
-                              {
-                                backgroundColor:
-                                  bin.current_level >=
-                                  90
-                                    ? '#FFEBEE'
-                                    : '#E8F5E9',
-                              },
-                            ]}
-                          >
-
-                            <Ionicons
-
-                              name={
-                                getWasteIcon(
-                                  bin.waste_type
-                                ) as any
-                              }
-
-                              size={21}
-
-                              color={
-                                statusColor
-                              }
-
-                            />
-
-                          </View>
-
-
-                          {/* BIN INFORMATION */}
-
-                          <View>
-
-                            <Text
-                              style={
-                                styles.binName
-                              }
-                            >
-                              {
-                                bin.waste_type
-                              }
-                            </Text>
-
-
-                            <Text
-                              style={
-                                styles.binIdentifier
-                              }
-                            >
-                              {
-                                bin.name
-                              }
-                            </Text>
-
-                          </View>
-
-                        </View>
-
-
-                        {/* STATUS */}
-
-                        <Text
-                          style={[
-                            styles.status,
-                            {
-                              color:
-                                statusColor,
-                            },
-                          ]}
-                        >
-                          {
-                            status
-                          }
-                        </Text>
-
-                      </View>
-
-
-                      {/* LEVEL */}
-
-                      <View
-                        style={
-                          styles.levelRow
-                        }
-                      >
-
-                        <Text
-                          style={[
-                            styles.level,
-                            {
-                              color:
-                                statusColor,
-                            },
-                          ]}
-                        >
-                          {
-                            bin.current_level
-                          }%
-                        </Text>
-
-
-                        <Text
-                          style={
-                            styles.capacityText
-                          }
-                        >
-                          Capacity
-                        </Text>
-
-                      </View>
-
-
-                      {/* PROGRESS BAR */}
-
-                      <View
-                        style={
-                          styles.progressBackground
-                        }
-                      >
-
-                        <View
-                          style={[
-                            styles.progress,
-                            {
-                              width: `${Math.min(
-                                Math.max(
-                                  bin.current_level,
-                                  0
-                                ),
-                                100
-                              )}%`,
-
-                              backgroundColor:
-                                statusColor,
-                            },
-                          ]}
-                        />
-
-                      </View>
-
-
-                      {/* LOCATION */}
-
-                      <View
-                        style={
-                          styles.infoRow
-                        }
-                      >
-
-                        <Ionicons
-                          name="location-outline"
-                          size={16}
-                          color="#777777"
-                        />
-
-
-                        <Text
-                          style={
-                            styles.location
-                          }
-                        >
-                          {
-                            bin.location
-                          }
-                        </Text>
-
-                      </View>
-
-
-                      {/* LAST UPDATED */}
-
-                      <View
-                        style={
-                          styles.infoRow
-                        }
-                      >
-
-                        <Ionicons
-                          name="time-outline"
-                          size={15}
-                          color="#999999"
-                        />
-
-
-                        <Text
-                          style={
-                            styles.updated
-                          }
-                        >
-                          Last updated:{' '}
-
-                          {bin.updated_at
-                            ? new Date(
-                                bin.updated_at
-                              ).toLocaleString()
-                            : 'N/A'}
-
-                        </Text>
-
-                      </View>
-
-                    </View>
-
-                  );
-
-                }
-              )}
-
-            </View>
-
-          )}
-
-        </ScrollView>
-
-
-        {/* BOTTOM NAVIGATION */}
+        </View>
 
         <BottomNav />
 
       </View>
 
+    );
+
+  }
+
+  /*
+   * =====================================================
+   * ERROR
+   * =====================================================
+   */
+
+  if (
+    error &&
+    !state
+  ) {
+
+    return (
+
+      <View
+        style={
+          styles.container
+        }
+      >
+
+        <Header
+          title="Notifications"
+          subtitle="Bin collection alerts"
+        />
+
+        <View
+          style={
+            styles.errorContainer
+          }
+        >
+
+          <View
+            style={
+              styles.errorIconContainer
+            }
+          >
+
+            <Ionicons
+              name="alert-circle-outline"
+              size={42}
+              color="#C62828"
+            />
+
+          </View>
+
+          <Text
+            style={
+              styles.emptyTitle
+            }
+          >
+            Unable to Load
+          </Text>
+
+          <Text
+            style={
+              styles.emptyText
+            }
+          >
+            The live trashcan data could not
+            be loaded.
+          </Text>
+
+          <Text
+            style={
+              styles.errorText
+            }
+          >
+            {error}
+          </Text>
+
+        </View>
+
+        <BottomNav />
+
+      </View>
+
+    );
+
+  }
+
+  /*
+   * =====================================================
+   * MAIN UI
+   * =====================================================
+   */
+
+  return (
+
+    <View
+      style={
+        styles.container
+      }
+    >
+
+      {/* HEADER */}
+
+      <Header
+        title="Notifications"
+        subtitle="Bin collection alerts"
+      />
+
+      <ScrollView
+        style={
+          styles.scrollView
+        }
+        contentContainerStyle={
+          styles.content
+        }
+        showsVerticalScrollIndicator={
+          false
+        }
+      >
+
+        {/*
+         * =================================================
+         * NO ACTIVE NOTIFICATION
+         * =================================================
+         */}
+
+        {!isFull ? (
+
+          <View
+            style={
+              styles.emptyContainer
+            }
+          >
+
+            <View
+              style={
+                styles.emptyIconContainer
+              }
+            >
+
+              <Ionicons
+                name="checkmark-circle-outline"
+                size={42}
+                color="#537B2F"
+              />
+
+            </View>
+
+            <Text
+              style={
+                styles.emptyTitle
+              }
+            >
+              No Notifications
+            </Text>
+
+            <Text
+              style={
+                styles.emptyText
+              }
+            >
+              The live trashcan does not
+              currently require collection.
+            </Text>
+
+            {sensor && (
+
+              <View
+                style={
+                  styles.currentState
+                }
+              >
+
+                <Text
+                  style={
+                    styles.currentStateLabel
+                  }
+                >
+                  Current HC-SR04 level
+                </Text>
+
+                <Text
+                  style={
+                    styles.currentStateValue
+                  }
+                >
+                  {sensor.fill_percent}%
+                </Text>
+
+                <Text
+                  style={
+                    styles.currentStateDistance
+                  }
+                >
+                  {sensor.distance_cm === null
+                    ? 'Distance unavailable'
+                    : `${sensor.distance_cm} cm from sensor`}
+                </Text>
+
+              </View>
+
+            )}
+
+          </View>
+
+        ) : (
+
+          /*
+           * =================================================
+           * ACTIVE COLLECTION NOTIFICATION
+           * =================================================
+           */
+
+          <Pressable
+            style={[
+              styles.notificationCard,
+
+              !notificationRead &&
+                styles.unreadCard,
+            ]}
+            onPress={
+              openNotification
+            }
+          >
+
+            {/* ALERT ICON */}
+
+            <View
+              style={
+                styles.alertIconContainer
+              }
+            >
+
+              <Ionicons
+                name="alert"
+                size={24}
+                color="#C62828"
+              />
+
+            </View>
+
+            {/* CONTENT */}
+
+            <View
+              style={
+                styles.notificationContent
+              }
+            >
+
+              <View
+                style={
+                  styles.titleRow
+                }
+              >
+
+                <View
+                  style={
+                    styles.titleContainer
+                  }
+                >
+
+                  <Text
+                    style={
+                      styles.notificationTitle
+                    }
+                  >
+                    Live Trashcan
+                  </Text>
+
+                  <Text
+                    style={
+                      styles.notificationSubtitle
+                    }
+                  >
+                    HC-SR04 monitored
+                  </Text>
+
+                </View>
+
+                {!notificationRead && (
+
+                  <View
+                    style={
+                      styles.unreadDot
+                    }
+                  />
+
+                )}
+
+              </View>
+
+              <Text
+                style={
+                  styles.notificationMessage
+                }
+              >
+                The trashcan requires
+                collection.
+              </Text>
+
+              <Text
+                style={
+                  styles.currentLevelText
+                }
+              >
+                Current level:{' '}
+                {sensor?.fill_percent ?? 0}%
+              </Text>
+
+              {sensor?.distance_cm !==
+                null &&
+                sensor?.distance_cm !==
+                  undefined && (
+
+                  <Text
+                    style={
+                      styles.distanceText
+                    }
+                  >
+                    HC-SR04:{' '}
+                    {sensor.distance_cm} cm
+                  </Text>
+
+                )}
+
+              <Text
+                style={
+                  styles.dateText
+                }
+              >
+                {formatDate(
+                  sensor?.updated_at
+                )}
+              </Text>
+
+            </View>
+
+          </Pressable>
+
+        )}
+
+      </ScrollView>
+
+      {/* =================================================
+          LIVE BIN INFORMATION MODAL
+          ================================================= */}
+
+      <Modal
+        visible={
+          selectedNotification
+        }
+        transparent
+        animationType="fade"
+        onRequestClose={
+          closeModal
+        }
+      >
+
+        <View
+          style={
+            styles.modalOverlay
+          }
+        >
+
+          <View
+            style={
+              styles.modalContainer
+            }
+          >
+
+            {/* MODAL HEADER */}
+
+            <View
+              style={
+                styles.modalHeader
+              }
+            >
+
+              <View
+                style={
+                  styles.binIconContainer
+                }
+              >
+
+                <Ionicons
+                  name={
+                    'trash-bin-outline' as IoniconName
+                  }
+                  size={28}
+                  color="#C62828"
+                />
+
+              </View>
+
+              <View
+                style={
+                  styles.modalTitleContainer
+                }
+              >
+
+                <Text
+                  style={
+                    styles.modalTitle
+                  }
+                >
+                  Live Trashcan
+                </Text>
+
+                <Text
+                  style={
+                    styles.modalSubtitle
+                  }
+                >
+                  Current HC-SR04 status
+                </Text>
+
+              </View>
+
+            </View>
+
+            {/* CURRENT LEVEL */}
+
+            <View
+              style={
+                styles.infoRow
+              }
+            >
+
+              <Text
+                style={
+                  styles.infoLabel
+                }
+              >
+                Current Level
+              </Text>
+
+              <Text
+                style={[
+                  styles.infoValue,
+                  styles.levelValue,
+                ]}
+              >
+                {sensor?.fill_percent ?? 0}%
+              </Text>
+
+            </View>
+
+            {/* DISTANCE */}
+
+            <View
+              style={
+                styles.infoRow
+              }
+            >
+
+              <Text
+                style={
+                  styles.infoLabel
+                }
+              >
+                HC-SR04 Distance
+              </Text>
+
+              <Text
+                style={
+                  styles.infoValue
+                }
+              >
+                {sensor?.distance_cm ===
+                null ||
+                sensor?.distance_cm ===
+                  undefined
+                  ? '—'
+                  : `${sensor.distance_cm} cm`}
+              </Text>
+
+            </View>
+
+            {/* STATUS */}
+
+            <View
+              style={
+                styles.infoRow
+              }
+            >
+
+              <Text
+                style={
+                  styles.infoLabel
+                }
+              >
+                Status
+              </Text>
+
+              <Text
+                style={[
+                  styles.infoValue,
+                  styles.statusValue,
+                ]}
+              >
+                REQUIRES COLLECTION
+              </Text>
+
+            </View>
+
+            {/* FULL THRESHOLD */}
+
+            <View
+              style={
+                styles.infoRow
+              }
+            >
+
+              <Text
+                style={
+                  styles.infoLabel
+                }
+              >
+                Full Threshold
+              </Text>
+
+              <Text
+                style={
+                  styles.infoValue
+                }
+              >
+                {FULL_PERCENT}%
+              </Text>
+
+            </View>
+
+            {/* LAST UPDATED */}
+
+            <View
+              style={
+                styles.infoRow
+              }
+            >
+
+              <Text
+                style={
+                  styles.infoLabel
+                }
+              >
+                Last Updated
+              </Text>
+
+              <Text
+                style={
+                  styles.infoValue
+                }
+              >
+                {formatDate(
+                  sensor?.updated_at
+                )}
+              </Text>
+
+            </View>
+
+            {/* CLOSE */}
+
+            <Pressable
+              style={
+                styles.closeButton
+              }
+              onPress={
+                closeModal
+              }
+            >
+
+              <Text
+                style={
+                  styles.closeButtonText
+                }
+              >
+                CLOSE
+              </Text>
+
+            </Pressable>
+
+          </View>
+
+        </View>
+
+      </Modal>
+
+      {/* BOTTOM NAVIGATION */}
+
+      <BottomNav />
+
     </View>
 
   );
-
 }
 
-
 /*
- * =====================================================
+ * ======================================================
  * STYLES
- * =====================================================
+ * ======================================================
  */
 
 const styles =
   StyleSheet.create({
 
-    screen: {
-
-      flex: 1,
-
-      backgroundColor:
-        '#F5F7F5',
-
-    },
-
-
     container: {
-
       flex: 1,
-
-      backgroundColor:
-        '#F5F7F5',
-
+      backgroundColor: '#F5F5F5',
     },
 
+    scrollView: {
+      flex: 1,
+    },
 
     content: {
-
-      paddingBottom: 100,
-
-    },
-
-
-    welcome: {
-
-      paddingHorizontal: 24,
-
-      paddingTop: 24,
-
-      paddingBottom: 12,
-
-    },
-
-
-    welcomeTitle: {
-
-      fontSize: 25,
-
-      fontWeight: 'bold',
-
-      color: '#222222',
-
-    },
-
-
-    welcomeText: {
-
-      color: '#666666',
-
-      marginTop: 5,
-
-      fontSize: 14,
-
-      lineHeight: 20,
-
-    },
-
-
-    loading: {
-
-      marginTop: 45,
-
-    },
-
-
-    card: {
-
-      backgroundColor:
-        '#FFFFFF',
-
-      marginHorizontal: 20,
-
-      marginVertical: 8,
-
       padding: 20,
+      paddingBottom: 110,
+    },
 
-      borderRadius: 16,
+    /*
+     * ==================================================
+     * NOTIFICATION CARD
+     * ==================================================
+     */
+
+    notificationCard: {
+      backgroundColor: '#FFFFFF',
+      borderRadius: 18,
+      padding: 20,
+      marginBottom: 14,
+      flexDirection: 'row',
+      alignItems: 'flex-start',
 
       shadowColor: '#000',
 
       shadowOffset: {
-
         width: 0,
-
         height: 2,
-
       },
 
-      shadowOpacity: 0.05,
+      shadowOpacity: 0.08,
+      shadowRadius: 6,
 
-      shadowRadius: 4,
-
-      elevation: 2,
-
+      elevation: 3,
     },
 
-
-    cardHeader: {
-
-      flexDirection:
-        'row',
-
-      justifyContent:
-        'space-between',
-
-      alignItems:
-        'center',
-
+    unreadCard: {
+      borderLeftWidth: 4,
+      borderLeftColor: '#C62828',
     },
 
+    alertIconContainer: {
+      width: 46,
+      height: 46,
+      borderRadius: 23,
+      backgroundColor: '#FCEAEA',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: 14,
+    },
 
-    binTitleContainer: {
-
-      flexDirection:
-        'row',
-
-      alignItems:
-        'center',
-
+    notificationContent: {
       flex: 1,
-
     },
 
-
-    binIcon: {
-
-      width: 42,
-
-      height: 42,
-
-      borderRadius: 21,
-
-      alignItems:
-        'center',
-
-      justifyContent:
-        'center',
-
-      marginRight: 12,
-
+    titleRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
     },
 
+    titleContainer: {
+      flex: 1,
+    },
 
-    binName: {
-
-      fontSize: 17,
-
-      fontWeight: 'bold',
-
+    notificationTitle: {
+      fontSize: 16,
+      fontWeight: '700',
       color: '#222222',
-
+      marginBottom: 3,
     },
 
-
-    binIdentifier: {
-
-      fontSize: 12,
-
-      color: '#888888',
-
-      marginTop: 2,
-
-    },
-
-
-    status: {
-
-      fontSize: 11,
-
-      fontWeight: 'bold',
-
-    },
-
-
-    levelRow: {
-
-      flexDirection:
-        'row',
-
-      alignItems:
-        'baseline',
-
-      marginTop: 15,
-
-    },
-
-
-    level: {
-
-      fontSize: 32,
-
-      fontWeight: 'bold',
-
-    },
-
-
-    capacityText: {
-
-      fontSize: 12,
-
-      color: '#999999',
-
-      marginLeft: 7,
-
-    },
-
-
-    progressBackground: {
-
-      height: 10,
-
-      backgroundColor:
-        '#E5E5E5',
-
-      borderRadius: 10,
-
-      marginTop: 10,
-
-      overflow: 'hidden',
-
-    },
-
-
-    progress: {
-
-      height: '100%',
-
-      borderRadius: 10,
-
-    },
-
-
-    infoRow: {
-
-      flexDirection:
-        'row',
-
-      alignItems:
-        'center',
-
-      marginTop: 12,
-
-    },
-
-
-    location: {
-
-      color: '#666666',
-
+    notificationSubtitle: {
       fontSize: 13,
-
-      marginLeft: 6,
-
+      color: '#888888',
     },
 
-
-    updated: {
-
-      color: '#999999',
-
-      fontSize: 11,
-
-      marginLeft: 6,
-
+    unreadDot: {
+      width: 9,
+      height: 9,
+      borderRadius: 5,
+      backgroundColor: '#C62828',
+      marginTop: 5,
+      marginLeft: 8,
     },
 
+    notificationMessage: {
+      fontSize: 14,
+      color: '#555555',
+      marginTop: 12,
+      marginBottom: 10,
+    },
+
+    currentLevelText: {
+      fontSize: 14,
+      color: '#444444',
+      marginBottom: 5,
+    },
+
+    distanceText: {
+      fontSize: 13,
+      color: '#666666',
+      marginBottom: 5,
+    },
+
+    dateText: {
+      fontSize: 12,
+      color: '#888888',
+    },
+
+    /*
+     * ==================================================
+     * EMPTY STATE
+     * ==================================================
+     */
 
     emptyContainer: {
-
-      alignItems:
-        'center',
-
-      justifyContent:
-        'center',
-
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingTop: 100,
       paddingHorizontal: 30,
-
-      paddingTop: 75,
-
     },
 
-
-    emptyIcon: {
-
-      width: 65,
-
-      height: 65,
-
-      borderRadius: 33,
-
-      backgroundColor:
-        '#E8ECE8',
-
-      alignItems:
-        'center',
-
-      justifyContent:
-        'center',
-
-      marginBottom: 15,
-
+    emptyIconContainer: {
+      width: 80,
+      height: 80,
+      borderRadius: 40,
+      backgroundColor: '#EAF2E6',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 18,
     },
-
 
     emptyTitle: {
-
       fontSize: 20,
-
-      fontWeight: 'bold',
-
+      fontWeight: '700',
       color: '#333333',
-
+      marginBottom: 8,
     },
 
-
     emptyText: {
-
       fontSize: 14,
-
-      color: '#888888',
-
+      color: '#777777',
       textAlign: 'center',
-
-      marginTop: 8,
-
       lineHeight: 20,
+    },
 
+    currentState: {
+      width: '100%',
+      marginTop: 24,
+      backgroundColor: '#FFFFFF',
+      borderRadius: 16,
+      padding: 18,
+      alignItems: 'center',
+
+      shadowColor: '#000',
+
+      shadowOffset: {
+        width: 0,
+        height: 2,
+      },
+
+      shadowOpacity: 0.06,
+      shadowRadius: 5,
+
+      elevation: 2,
+    },
+
+    currentStateLabel: {
+      fontSize: 12,
+      color: '#888888',
+    },
+
+    currentStateValue: {
+      fontSize: 30,
+      fontWeight: '700',
+      color: '#2E7D32',
+      marginTop: 4,
+    },
+
+    currentStateDistance: {
+      fontSize: 13,
+      color: '#777777',
+      marginTop: 4,
+    },
+
+    /*
+     * ==================================================
+     * LOADING
+     * ==================================================
+     */
+
+    loadingContainer: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingBottom: 100,
+    },
+
+    loadingText: {
+      marginTop: 12,
+      fontSize: 14,
+      color: '#777777',
+    },
+
+    /*
+     * ==================================================
+     * ERROR
+     * ==================================================
+     */
+
+    errorContainer: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 30,
+      paddingBottom: 100,
+    },
+
+    errorIconContainer: {
+      width: 80,
+      height: 80,
+      borderRadius: 40,
+      backgroundColor: '#FCEAEA',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 18,
+    },
+
+    errorText: {
+      fontSize: 12,
+      color: '#C62828',
+      textAlign: 'center',
+      marginTop: 12,
+      lineHeight: 18,
+    },
+
+    /*
+     * ==================================================
+     * MODAL
+     * ==================================================
+     */
+
+    modalOverlay: {
+      flex: 1,
+      backgroundColor:
+        'rgba(0, 0, 0, 0.45)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingHorizontal: 20,
+    },
+
+    modalContainer: {
+      width: '100%',
+      maxWidth: 500,
+      backgroundColor: '#FFFFFF',
+      borderRadius: 22,
+      padding: 26,
+
+      shadowColor: '#000',
+
+      shadowOffset: {
+        width: 0,
+        height: 5,
+      },
+
+      shadowOpacity: 0.2,
+      shadowRadius: 12,
+
+      elevation: 8,
+    },
+
+    modalHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 22,
+    },
+
+    binIconContainer: {
+      width: 54,
+      height: 54,
+      borderRadius: 27,
+      backgroundColor: '#FCEAEA',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: 16,
+    },
+
+    modalTitleContainer: {
+      flex: 1,
+    },
+
+    modalTitle: {
+      fontSize: 23,
+      fontWeight: '700',
+      color: '#222222',
+    },
+
+    modalSubtitle: {
+      fontSize: 13,
+      color: '#888888',
+      marginTop: 3,
+    },
+
+    /*
+     * ==================================================
+     * INFORMATION
+     * ==================================================
+     */
+
+    infoRow: {
+      paddingVertical: 13,
+      borderBottomWidth: 1,
+      borderBottomColor: '#EEEEEE',
+    },
+
+    infoLabel: {
+      fontSize: 13,
+      color: '#888888',
+      marginBottom: 5,
+    },
+
+    infoValue: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: '#333333',
+    },
+
+    levelValue: {
+      color: '#C62828',
+    },
+
+    statusValue: {
+      color: '#C62828',
+      fontWeight: '700',
+    },
+
+    /*
+     * ==================================================
+     * CLOSE
+     * ==================================================
+     */
+
+    closeButton: {
+      height: 50,
+      backgroundColor: '#F1F1F1',
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginTop: 20,
+    },
+
+    closeButtonText: {
+      fontSize: 14,
+      fontWeight: '700',
+      color: '#444444',
     },
 
   });
