@@ -474,7 +474,7 @@ export default function BinMonitor({
    */
 
   let statusLabel =
-    'WAITING FOR SENSOR';
+  'WAITING FOR SENSOR';
 
   let statusColor =
     '#777777';
@@ -482,40 +482,46 @@ export default function BinMonitor({
   let statusBackground =
     '#F3F3F3';
 
-  if (
-    state?.confirmed_full
-  ) {
-    statusLabel =
-      'FULL - CAMERA CONFIRMED';
+  if (sensor) {
+    const currentFill = Math.max(
+      0,
+      Math.min(
+        100,
+        sensor.fill_percent
+      )
+    );
 
-    statusColor =
-      '#C62828';
+    /*
+    * LEVEL COLORS
+    *
+    * 0–49   = Green
+    * 50–84  = Yellow
+    * 85–100 = Red
+    */
 
-    statusBackground =
-      '#FFEBEE';
-  } else if (
-    sensor?.is_full
-  ) {
-    statusLabel =
-      'FULL';
+    if (currentFill >= 85) {
+      statusColor = '#C62828';
+      statusBackground = '#FFEBEE';
+    } else if (currentFill >= 50) {
+      statusColor = '#F9A825';
+      statusBackground = '#FFF8E1';
+    } else {
+      statusColor = '#2E7D32';
+      statusBackground = '#E8F5E9';
+    }
 
-    statusColor =
-      '#C62828';
+  /*
+   * STATUS LABEL
+   */
 
-    statusBackground =
-      '#FFEBEE';
-  } else if (
-    sensor
-  ) {
-    statusLabel =
-      'AVAILABLE';
-
-    statusColor =
-      '#2E7D32';
-
-    statusBackground =
-      '#E8F5E9';
+  if (currentFill >= 85) {
+    statusLabel = state?.confirmed_full
+      ? 'FULL - CAMERA CONFIRMED'
+      : 'FULL';
+  } else {
+    statusLabel = 'AVAILABLE';
   }
+}
 
   const fill =
     sensor
@@ -747,11 +753,7 @@ export default function BinMonitor({
                 bin?.waste_type
               )}
               size={30}
-              color={
-                sensor?.is_full
-                  ? '#C62828'
-                  : '#537B2F'
-              }
+              color={statusColor}
             />
           </View>
 

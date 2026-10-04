@@ -51,6 +51,31 @@ function formatDate(
   });
 }
 
+/*
+ * =====================================================
+ * LEVEL COLOR
+ * =====================================================
+ *
+ * 0–49   = Green
+ * 50–84  = Yellow
+ * 85–100 = Red
+ *
+ */
+
+function getLevelColor(
+  level: number
+) {
+  if (level >= 85) {
+    return '#C62828';
+  }
+
+  if (level >= 50) {
+    return '#F9A825';
+  }
+
+  return '#2E7D32';
+}
+
 export default function Notifications() {
 
   const [state, setState] =
@@ -266,6 +291,20 @@ export default function Notifications() {
 
   const sensor =
     state?.sensor ?? null;
+
+  /*
+   * =====================================================
+   * CURRENT LEVEL COLOR
+   * =====================================================
+   */
+
+  const currentLevel =
+    sensor?.fill_percent ?? 0;
+
+  const currentLevelColor =
+    getLevelColor(
+      currentLevel
+    );
 
   /*
    * =====================================================
@@ -568,9 +607,13 @@ export default function Notifications() {
                 </Text>
 
                 <Text
-                  style={
-                    styles.currentStateValue
-                  }
+                  style={[
+                    styles.currentStateValue,
+                    {
+                      color:
+                        currentLevelColor,
+                    },
+                  ]}
                 >
                   {sensor.fill_percent}%
                 </Text>
@@ -687,9 +730,13 @@ export default function Notifications() {
               </Text>
 
               <Text
-                style={
-                  styles.currentLevelText
-                }
+                style={[
+                  styles.currentLevelText,
+                  {
+                    color:
+                      currentLevelColor,
+                  },
+                ]}
               >
                 Current level:{' '}
                 {sensor?.fill_percent ?? 0}%
@@ -826,6 +873,10 @@ export default function Notifications() {
                 style={[
                   styles.infoValue,
                   styles.levelValue,
+                  {
+                    color:
+                      currentLevelColor,
+                  },
                 ]}
               >
                 {sensor?.fill_percent ?? 0}%
