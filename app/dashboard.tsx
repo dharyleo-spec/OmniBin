@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 
+import BinMonitor from '../components/BinMonitor';
 import BottomNav from '../components/BottomNav';
 import Header from '../components/Header';
 import { supabase } from '../lib/supabase';
@@ -55,6 +56,7 @@ export default function Dashboard() {
   const [bins, setBins] = useState<Bin[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [monitorReloadKey, setMonitorReloadKey] = useState(0);
 
   /*
    * =====================================================
@@ -487,6 +489,7 @@ export default function Dashboard() {
 
   const onRefresh = () => {
     setRefreshing(true);
+    setMonitorReloadKey((key) => key + 1);
 
     fetchBins();
   };
@@ -632,11 +635,17 @@ export default function Dashboard() {
                 styles.welcomeText
               }
             >
-              Monitor the current
-              status of all waste
-              bins.
+              Live fill, camera
+              confirmation, and the
+              status of every bin.
             </Text>
           </View>
+
+          <BinMonitor
+            reloadKey={
+              monitorReloadKey
+            }
+          />
 
           {/* LOADING */}
 
