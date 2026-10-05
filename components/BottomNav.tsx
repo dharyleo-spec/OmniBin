@@ -1,21 +1,24 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import {
-    Pressable,
-    StyleSheet,
-    Text,
-    View,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
 } from 'react-native';
 
 import { Ionicons } from '@expo/vector-icons';
 
 import {
-    useFocusEffect,
-    usePathname,
-    useRouter,
+  useFocusEffect,
+  usePathname,
+  useRouter,
 } from 'expo-router';
 
-import { supabase } from '../lib/supabase';
+import {
+  fetchMonitorState,
+  type MonitorState,
+} from '../lib/binMonitor';
 
 export default function BottomNav() {
   const router = useRouter();
@@ -26,51 +29,139 @@ export default function BottomNav() {
 
   /*
    * =====================================================
-   * CHECK UNREAD NOTIFICATIONS
+   * FULL NOTIFICATION THRESHOLD
+   * =====================================================
+   *
+   * The red dot appears when the HC-SR04 reaches
+   * 85% or higher.
+   *
+   * 0–84%  = No notification
+   * 85–100% = Notification
+   *
+   * =====================================================
+   */
+
+  const NOTIFICATION_THRESHOLD = 85;
+
+  /*
+   * =====================================================
+   * CHECK LIVE BIN LEVEL
+   * =====================================================
+   *
+   * This uses the EXACT SAME source as BinMonitor
+   * and Notifications.
+   *
+   * We do NOT use the notification table here.
+   *
    * =====================================================
    */
 
   const checkUnreadNotifications =
     useCallback(async () => {
-      const { data, error } = await supabase
-        .from('notification')
-        .select('notif_id')
-        .eq('is_read', false);
 
-      if (error) {
+      try {
+
+        const state: MonitorState =
+          await fetchMonitorState();
+
+        const level =
+          state?.sensor?.fill_percent ?? 0;
+
+        /*
+         * Red dot appears at 85% or higher.
+         */
+
+        if (
+          level >=
+          NOTIFICATION_THRESHOLD
+        ) {
+
+          setHasUnread(true);
+
+        } else {
+
+          setHasUnread(false);
+
+        }
+
+      } catch (error) {
+
+        /*
+         * If the sensor cannot be read,
+         * do not show the notification dot.
+         */
+
         console.warn(
-          'Unread notification check skipped:',
-          error.message
+          'BottomNav sensor check failed:',
+          error
         );
 
         setHasUnread(false);
-        return;
+
       }
 
-      setHasUnread(
-        Array.isArray(data) &&
-          data.length > 0
-      );
     }, []);
+
+  /*
+   * =====================================================
+   * INITIAL CHECK
+   * =====================================================
+   */
+
+  useEffect(() => {
+
+    checkUnreadNotifications();
+
+  }, [checkUnreadNotifications]);
+
+  /*
+   * =====================================================
+   * AUTOMATIC SENSOR CHECK
+   * =====================================================
+   *
+   * Checks the HC-SR04 level every 2 seconds.
+   *
+   * This means the red dot can appear while the user
+   * is still on the Dashboard.
+   *
+   * No need to open Notifications.
+   *
+   * =====================================================
+   */
+
+  useEffect(() => {
+
+    const interval =
+      setInterval(() => {
+
+        checkUnreadNotifications();
+
+      }, 2000);
+
+    return () => {
+
+      clearInterval(interval);
+
+    };
+
+  }, [checkUnreadNotifications]);
 
   /*
    * =====================================================
    * CHECK WHEN SCREEN BECOMES ACTIVE
    * =====================================================
    *
-   * No Realtime channel is needed here.
-   *
-   * Notifications.tsx handles Realtime.
-   *
-   * BottomNav simply checks the database whenever
-   * the current screen becomes active.
+   * Also perform an immediate check whenever the user
+   * changes screens.
    *
    * =====================================================
    */
 
   useFocusEffect(
     useCallback(() => {
+
       checkUnreadNotifications();
+
     }, [checkUnreadNotifications])
   );
 
@@ -98,6 +189,7 @@ export default function BottomNav() {
       | '/notifications'
       | '/profile'
   ) {
+
     if (pathname === route) {
       return;
     }
@@ -111,40 +203,47 @@ export default function BottomNav() {
       navigationOrder[route];
 
     /*
-     * =====================================================
+     * =================================================
      * MOVING FORWARD
-     * =====================================================
+     * =================================================
      */
 
     if (
       currentIndex !== undefined &&
       targetIndex > currentIndex
     ) {
+
       router.push(route);
+
       return;
+
     }
 
     /*
-     * =====================================================
+     * =================================================
      * MOVING BACKWARD
-     * =====================================================
+     * =================================================
      */
 
     if (
       currentIndex !== undefined &&
       targetIndex < currentIndex
     ) {
+
       router.dismissTo(route);
+
       return;
+
     }
 
     /*
-     * =====================================================
+     * =================================================
      * FALLBACK
-     * =====================================================
+     * =================================================
      */
 
     router.push(route);
+
   }
 
   /*
@@ -160,12 +259,14 @@ export default function BottomNav() {
       icon: 'home-outline' as const,
       activeIcon: 'home' as const,
     },
+
     {
       label: 'Notifications',
       route: '/notifications' as const,
       icon: 'notifications-outline' as const,
       activeIcon: 'notifications' as const,
     },
+
     {
       label: 'Profile',
       route: '/profile' as const,
@@ -181,14 +282,18 @@ export default function BottomNav() {
    */
 
   return (
+
     <View style={styles.container}>
+
       <View style={styles.navBar}>
 
         {navItems.map((item) => {
+
           const isActive =
             pathname === item.route;
 
           return (
+
             <Pressable
               key={item.route}
               style={styles.navItem}
@@ -215,19 +320,26 @@ export default function BottomNav() {
                   }
                 />
 
+                {/* =====================================
+                    NOTIFICATION RED DOT
+                    ===================================== */}
+
                 {item.route ===
                   '/notifications' &&
                   hasUnread && (
+
                     <View
                       style={
                         styles.notificationDot
                       }
                     />
+
                   )}
 
               </View>
 
               {isActive && (
+
                 <Text
                   style={
                     styles.activeLabel
@@ -235,24 +347,30 @@ export default function BottomNav() {
                 >
                   {item.label}
                 </Text>
+
               )}
 
             </Pressable>
+
           );
+
         })}
 
       </View>
+
     </View>
+
   );
 }
 
 /*
- * =====================================================
+ * ======================================================
  * STYLES
- * =====================================================
+ * ======================================================
  */
 
 const styles = StyleSheet.create({
+
   container: {
     backgroundColor: '#FFFFFF',
   },
@@ -271,10 +389,12 @@ const styles = StyleSheet.create({
     elevation: 8,
 
     shadowColor: '#000',
+
     shadowOffset: {
       width: 0,
       height: -2,
     },
+
     shadowOpacity: 0.08,
     shadowRadius: 4,
   },
@@ -317,7 +437,10 @@ const styles = StyleSheet.create({
   activeLabel: {
     fontSize: 11,
     fontWeight: '600',
+
     color: '#1B5E20',
+
     marginTop: 2,
   },
+
 });

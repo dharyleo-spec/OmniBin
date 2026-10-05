@@ -22,11 +22,19 @@ import Header from '../components/Header';
 import {
   FULL_PERCENT,
   fetchMonitorState,
-  type MonitorState
+  type MonitorState,
 } from '../lib/binMonitor';
+
+import { supabase } from '../lib/supabase';
 
 type IoniconName =
   keyof typeof Ionicons.glyphMap;
+
+/*
+ * =====================================================
+ * FORMAT DATE
+ * =====================================================
+ */
 
 function formatDate(
   iso: string | undefined
@@ -41,14 +49,54 @@ function formatDate(
     return iso;
   }
 
-  return date.toLocaleString(undefined, {
-    month: 'numeric',
-    day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    second: '2-digit',
-  });
+  return date.toLocaleString(
+    undefined,
+    {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    }
+  );
+}
+
+/*
+ * =====================================================
+ * WASTE ICON
+ * =====================================================
+ *
+ * Same waste icons used by BinMonitor.
+ */
+
+function getWasteIcon(
+  wasteType: string | undefined
+): IoniconName {
+
+  const type =
+    wasteType
+      ?.toLowerCase()
+      .trim();
+
+  if (
+    type === 'biodegradable'
+  ) {
+    return 'leaf-outline';
+  }
+
+  if (
+    type === 'non-biodegradable'
+  ) {
+    return 'trash-bin-outline';
+  }
+
+  if (
+    type === 'recyclable'
+  ) {
+    return 'refresh-circle-outline';
+  }
+
+  return 'trash-bin-outline';
 }
 
 /*
@@ -60,11 +108,13 @@ function formatDate(
  * 50–84  = Yellow
  * 85–100 = Red
  *
+ * Matches BinMonitor.
  */
 
 function getLevelColor(
   level: number
 ) {
+
   if (level >= 85) {
     return '#C62828';
   }
@@ -76,10 +126,39 @@ function getLevelColor(
   return '#2E7D32';
 }
 
+/*
+ * =====================================================
+ * LEVEL BACKGROUND
+ * =====================================================
+ */
+
+function getLevelBackground(
+  level: number
+) {
+
+  if (level >= 85) {
+    return '#FCEAEA';
+  }
+
+  if (level >= 50) {
+    return '#FFF8E1';
+  }
+
+  return '#E8F5E9';
+}
+
 export default function Notifications() {
 
+  /*
+   * =====================================================
+   * STATE
+   * =====================================================
+   */
+
   const [state, setState] =
-    useState<MonitorState | null>(null);
+    useState<MonitorState | null>(
+      null
+    );
 
   const [loading, setLoading] =
     useState(true);
@@ -102,47 +181,46 @@ export default function Notifications() {
    * FETCH LIVE TRASHCAN STATE
    * =====================================================
    *
-   * IMPORTANT:
-   * This uses the EXACT SAME data source as BinMonitor.
-   *
-   * There is NO bins table here.
-   * There is NO notification table here.
-   *
-   * The HC-SR04 reading is the source of truth.
+   * Uses the same fetchMonitorState()
+   * used by BinMonitor.
    */
 
   const loadNotifications =
-    useCallback(async () => {
+    useCallback(
+      async () => {
 
-      try {
+        try {
 
-        const next =
-          await fetchMonitorState();
+          const next =
+            await fetchMonitorState();
 
-        setState(next);
-        setError('');
+          setState(next);
 
-      } catch (loadError) {
+          setError('');
 
-        const message =
-          loadError instanceof Error
-            ? loadError.message
-            : 'Could not load the live trashcan.';
+        } catch (loadError) {
 
-        console.error(
-          'NOTIFICATION FETCH ERROR:',
-          message
-        );
+          const message =
+            loadError instanceof Error
+              ? loadError.message
+              : 'Could not load the live trashcan.';
 
-        setError(message);
+          console.error(
+            'NOTIFICATION FETCH ERROR:',
+            message
+          );
 
-      } finally {
+          setError(message);
 
-        setLoading(false);
+        } finally {
 
-      }
+          setLoading(false);
 
-    }, []);
+        }
+
+      },
+      []
+    );
 
   /*
    * =====================================================
@@ -151,24 +229,31 @@ export default function Notifications() {
    */
 
   useFocusEffect(
-    useCallback(() => {
+    useCallback(
+      () => {
 
-      setLoading(true);
+        setLoading(true);
 
-      loadNotifications();
+        loadNotifications();
 
-    }, [loadNotifications])
+      },
+      [loadNotifications]
+    )
   );
 
   /*
    * =====================================================
-   * REALTIME HC-SR04 / CAMERA UPDATES
+   * REALTIME UPDATES
    * =====================================================
    *
-   * This is the SAME realtime source used by BinMonitor.
+   * Same realtime sources as BinMonitor:
    *
-   * When a new reading arrives, the notification screen
-   * immediately checks the latest HC-SR04 measurement.
+   * - readings
+   * - camera_checks
+   * - bins
+   *
+   * This keeps the notification information
+   * synchronized with the Dashboard.
    */
 
   useEffect(() => {
@@ -182,22 +267,42 @@ export default function Notifications() {
           'omnibin-notifications';
 
         /*
-         * Remove an existing channel with
-         * the same name first.
+         * Remove existing channel first.
          */
 
         const existing =
-          // @ts-ignore
-          undefined;
+          supabase
+            .getChannels()
+            .find(
+              (channel) =>
+                channel.topic ===
+                `realtime:${channelName}`
+            );
+
+        if (existing) {
+
+          await supabase.removeChannel(
+            existing
+          );
+
+        }
+
+        if (cancelled) {
+          return null;
+        }
 
         /*
          * Create realtime channel.
          */
 
         const channel =
-          require('../lib/supabase')
-            .supabase
-            .channel(channelName);
+          supabase.channel(
+            channelName
+          );
+
+        /*
+         * HC-SR04
+         */
 
         channel.on(
           'postgres_changes',
@@ -215,6 +320,10 @@ export default function Notifications() {
           }
         );
 
+        /*
+         * CAMERA
+         */
+
         channel.on(
           'postgres_changes',
           {
@@ -231,14 +340,35 @@ export default function Notifications() {
           }
         );
 
+        /*
+         * BIN DETAILS
+         */
+
+        channel.on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'bins',
+          },
+          () => {
+
+            if (!cancelled) {
+              loadNotifications();
+            }
+
+          }
+        );
+
         channel.subscribe();
 
         return channel;
+
       };
 
     let realtimeChannel:
       ReturnType<
-        typeof import('../lib/supabase').supabase.channel
+        typeof supabase.channel
       > | null = null;
 
     setupRealtime().then(
@@ -254,11 +384,9 @@ export default function Notifications() {
 
         } else if (channel) {
 
-          require('../lib/supabase')
-            .supabase
-            .removeChannel(
-              channel
-            );
+          supabase.removeChannel(
+            channel
+          );
 
         }
 
@@ -271,11 +399,9 @@ export default function Notifications() {
 
       if (realtimeChannel) {
 
-        require('../lib/supabase')
-          .supabase
-          .removeChannel(
-            realtimeChannel
-          );
+        supabase.removeChannel(
+          realtimeChannel
+        );
 
       }
 
@@ -285,24 +411,38 @@ export default function Notifications() {
 
   /*
    * =====================================================
-   * CURRENT HC-SR04 DATA
+   * DATA
    * =====================================================
    */
+
+  const bin =
+    state?.bin ?? null;
 
   const sensor =
     state?.sensor ?? null;
 
+  const currentLevel =
+    Math.max(
+      0,
+      Math.min(
+        100,
+        sensor?.fill_percent ?? 0
+      )
+    );
+
   /*
    * =====================================================
-   * CURRENT LEVEL COLOR
+   * LEVEL COLOR
    * =====================================================
    */
 
-  const currentLevel =
-    sensor?.fill_percent ?? 0;
-
   const currentLevelColor =
     getLevelColor(
+      currentLevel
+    );
+
+  const currentLevelBackground =
+    getLevelBackground(
       currentLevel
     );
 
@@ -311,28 +451,35 @@ export default function Notifications() {
    * ACTIVE NOTIFICATION
    * =====================================================
    *
-   * ONLY the HC-SR04 full state creates the notification.
+   * Notification appears ONLY when:
    *
-   * Therefore:
+   * 85% or higher
    *
-   * HC-SR04 = 0%
-   *      ↓
-   * No notification
-   *
-   * HC-SR04 = FULL_PERCENT or higher
-   *      ↓
-   * Collection notification
-   *
-   * This keeps Notifications consistent with the
-   * Live Trashcan card on Dashboard.
+   * This matches BinMonitor's FULL threshold.
    */
 
   const isFull =
-    sensor?.is_full === true;
+    currentLevel >= 85;
 
   /*
-   * If the bin becomes not full again,
-   * reset the local read state.
+   * =====================================================
+   * STATUS LABEL
+   * =====================================================
+   *
+   * Matches BinMonitor.
+   */
+
+  const statusLabel =
+    isFull
+      ? state?.confirmed_full
+        ? 'FULL - CAMERA CONFIRMED'
+        : 'FULL'
+      : 'AVAILABLE';
+
+  /*
+   * =====================================================
+   * RESET WHEN BIN DROPS BELOW 85%
+   * =====================================================
    */
 
   useEffect(() => {
@@ -340,6 +487,7 @@ export default function Notifications() {
     if (!isFull) {
 
       setNotificationRead(false);
+
       setSelectedNotification(false);
 
     }
@@ -640,6 +788,8 @@ export default function Notifications() {
            * =================================================
            * ACTIVE COLLECTION NOTIFICATION
            * =================================================
+           *
+           * Information now matches BinMonitor.
            */
 
           <Pressable
@@ -654,18 +804,28 @@ export default function Notifications() {
             }
           >
 
-            {/* ALERT ICON */}
+            {/* WASTE ICON */}
 
             <View
-              style={
-                styles.alertIconContainer
-              }
+              style={[
+                styles.alertIconContainer,
+                {
+                  backgroundColor:
+                    currentLevelBackground,
+                },
+              ]}
             >
 
               <Ionicons
-                name="alert"
-                size={24}
-                color="#C62828"
+                name={
+                  getWasteIcon(
+                    bin?.waste_type
+                  )
+                }
+                size={28}
+                color={
+                  currentLevelColor
+                }
               />
 
             </View>
@@ -695,7 +855,8 @@ export default function Notifications() {
                       styles.notificationTitle
                     }
                   >
-                    Live Trashcan
+                    {bin?.name ??
+                      'Live Trashcan 01'}
                   </Text>
 
                   <Text
@@ -703,7 +864,8 @@ export default function Notifications() {
                       styles.notificationSubtitle
                     }
                   >
-                    HC-SR04 monitored
+                    {bin?.waste_type ??
+                      'Recyclable'}
                   </Text>
 
                 </View>
@@ -729,44 +891,155 @@ export default function Notifications() {
                 collection.
               </Text>
 
-              <Text
-                style={[
-                  styles.currentLevelText,
-                  {
-                    color:
-                      currentLevelColor,
-                  },
-                ]}
-              >
-                Current level:{' '}
-                {sensor?.fill_percent ?? 0}%
-              </Text>
+              {/* CAPACITY */}
 
-              {sensor?.distance_cm !==
-                null &&
-                sensor?.distance_cm !==
-                  undefined && (
-
-                  <Text
-                    style={
-                      styles.distanceText
-                    }
-                  >
-                    HC-SR04:{' '}
-                    {sensor.distance_cm} cm
-                  </Text>
-
-                )}
-
-              <Text
+              <View
                 style={
-                  styles.dateText
+                  styles.detailRow
                 }
               >
-                {formatDate(
-                  sensor?.updated_at
-                )}
-              </Text>
+
+                <Ionicons
+                  name="pie-chart-outline"
+                  size={17}
+                  color={
+                    currentLevelColor
+                  }
+                />
+
+                <Text
+                  style={
+                    styles.detailText
+                  }
+                >
+                  Capacity:{' '}
+                  <Text
+                    style={[
+                      styles.detailTextBold,
+                      {
+                        color:
+                          currentLevelColor,
+                      },
+                    ]}
+                  >
+                    {sensor?.fill_percent ?? 0}%
+                  </Text>
+                </Text>
+
+              </View>
+
+              {/* HC-SR04 */}
+
+              <View
+                style={
+                  styles.detailRow
+                }
+              >
+
+                <Ionicons
+                  name="radio-outline"
+                  size={17}
+                  color="#777777"
+                />
+
+                <Text
+                  style={
+                    styles.detailText
+                  }
+                >
+                  HC-SR04:{' '}
+                  {sensor?.distance_cm != null
+                    ? `${sensor.distance_cm} cm`
+                    : '—'}
+                </Text>
+
+              </View>
+
+              {/* STATUS */}
+
+              <View
+                style={
+                  styles.detailRow
+                }
+              >
+
+                <Ionicons
+                  name="pulse-outline"
+                  size={17}
+                  color={
+                    currentLevelColor
+                  }
+                />
+
+                <Text
+                  style={[
+                    styles.detailText,
+                    {
+                      color:
+                        currentLevelColor,
+                      fontWeight:
+                        '700',
+                    },
+                  ]}
+                >
+                  {statusLabel}
+                </Text>
+
+              </View>
+
+              {/* LOCATION */}
+
+              <View
+                style={
+                  styles.detailRow
+                }
+              >
+
+                <Ionicons
+                  name="location-outline"
+                  size={17}
+                  color="#777777"
+                />
+
+                <Text
+                  style={
+                    styles.detailText
+                  }
+                  numberOfLines={2}
+                >
+                  {bin?.location ?? '—'}
+                </Text>
+
+              </View>
+
+              {/* LAST UPDATED */}
+
+              <View
+                style={[
+                  styles.detailRow,
+                  styles.lastDetailRow,
+                ]}
+              >
+
+                <Ionicons
+                  name="time-outline"
+                  size={17}
+                  color="#777777"
+                />
+
+                <Text
+                  style={
+                    styles.dateText
+                  }
+                >
+                  {sensor
+                    ? formatDate(
+                        sensor.updated_at
+                      )
+                    : 'Waiting for a reading'}
+                </Text>
+
+              </View>
 
             </View>
 
@@ -812,17 +1085,25 @@ export default function Notifications() {
             >
 
               <View
-                style={
-                  styles.binIconContainer
-                }
+                style={[
+                  styles.binIconContainer,
+                  {
+                    backgroundColor:
+                      currentLevelBackground,
+                  },
+                ]}
               >
 
                 <Ionicons
                   name={
-                    'trash-bin-outline' as IoniconName
+                    getWasteIcon(
+                      bin?.waste_type
+                    )
                   }
-                  size={28}
-                  color="#C62828"
+                  size={30}
+                  color={
+                    currentLevelColor
+                  }
                 />
 
               </View>
@@ -838,7 +1119,8 @@ export default function Notifications() {
                     styles.modalTitle
                   }
                 >
-                  Live Trashcan
+                  {bin?.name ??
+                    'Live Trashcan 01'}
                 </Text>
 
                 <Text
@@ -846,7 +1128,8 @@ export default function Notifications() {
                     styles.modalSubtitle
                   }
                 >
-                  Current HC-SR04 status
+                  {bin?.waste_type ??
+                    'Recyclable'}
                 </Text>
 
               </View>
@@ -866,13 +1149,12 @@ export default function Notifications() {
                   styles.infoLabel
                 }
               >
-                Current Level
+                Capacity
               </Text>
 
               <Text
                 style={[
                   styles.infoValue,
-                  styles.levelValue,
                   {
                     color:
                       currentLevelColor,
@@ -884,7 +1166,7 @@ export default function Notifications() {
 
             </View>
 
-            {/* DISTANCE */}
+            {/* HC-SR04 */}
 
             <View
               style={
@@ -906,7 +1188,7 @@ export default function Notifications() {
                 }
               >
                 {sensor?.distance_cm ===
-                null ||
+                  null ||
                 sensor?.distance_cm ===
                   undefined
                   ? '—'
@@ -934,10 +1216,66 @@ export default function Notifications() {
               <Text
                 style={[
                   styles.infoValue,
-                  styles.statusValue,
+                  {
+                    color:
+                      currentLevelColor,
+                  },
                 ]}
               >
-                REQUIRES COLLECTION
+                {statusLabel}
+              </Text>
+
+            </View>
+
+            {/* WASTE TYPE */}
+
+            <View
+              style={
+                styles.infoRow
+              }
+            >
+
+              <Text
+                style={
+                  styles.infoLabel
+                }
+              >
+                Waste Type
+              </Text>
+
+              <Text
+                style={
+                  styles.infoValue
+                }
+              >
+                {bin?.waste_type ??
+                  'Recyclable'}
+              </Text>
+
+            </View>
+
+            {/* LOCATION */}
+
+            <View
+              style={
+                styles.infoRow
+              }
+            >
+
+              <Text
+                style={
+                  styles.infoLabel
+                }
+              >
+                Location
+              </Text>
+
+              <Text
+                style={
+                  styles.infoValue
+                }
+              >
+                {bin?.location ?? '—'}
               </Text>
 
             </View>
@@ -989,9 +1327,11 @@ export default function Notifications() {
                   styles.infoValue
                 }
               >
-                {formatDate(
-                  sensor?.updated_at
-                )}
+                {sensor
+                  ? formatDate(
+                      sensor.updated_at
+                    )
+                  : 'Waiting for a reading'}
               </Text>
 
             </View>
@@ -1088,10 +1428,9 @@ const styles =
     },
 
     alertIconContainer: {
-      width: 46,
-      height: 46,
-      borderRadius: 23,
-      backgroundColor: '#FCEAEA',
+      width: 52,
+      height: 52,
+      borderRadius: 26,
       alignItems: 'center',
       justifyContent: 'center',
       marginRight: 14,
@@ -1111,7 +1450,7 @@ const styles =
     },
 
     notificationTitle: {
-      fontSize: 16,
+      fontSize: 17,
       fontWeight: '700',
       color: '#222222',
       marginBottom: 3,
@@ -1135,24 +1474,35 @@ const styles =
       fontSize: 14,
       color: '#555555',
       marginTop: 12,
-      marginBottom: 10,
+      marginBottom: 12,
     },
 
-    currentLevelText: {
-      fontSize: 14,
-      color: '#444444',
-      marginBottom: 5,
+    detailRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 8,
     },
 
-    distanceText: {
+    lastDetailRow: {
+      marginBottom: 0,
+    },
+
+    detailText: {
+      flex: 1,
       fontSize: 13,
       color: '#666666',
-      marginBottom: 5,
+      marginLeft: 8,
+    },
+
+    detailTextBold: {
+      fontWeight: '700',
     },
 
     dateText: {
+      flex: 1,
       fontSize: 12,
       color: '#888888',
+      marginLeft: 8,
     },
 
     /*
@@ -1221,7 +1571,6 @@ const styles =
     currentStateValue: {
       fontSize: 30,
       fontWeight: '700',
-      color: '#2E7D32',
       marginTop: 4,
     },
 
@@ -1327,7 +1676,6 @@ const styles =
       width: 54,
       height: 54,
       borderRadius: 27,
-      backgroundColor: '#FCEAEA',
       alignItems: 'center',
       justifyContent: 'center',
       marginRight: 16,
@@ -1371,15 +1719,6 @@ const styles =
       fontSize: 16,
       fontWeight: '600',
       color: '#333333',
-    },
-
-    levelValue: {
-      color: '#C62828',
-    },
-
-    statusValue: {
-      color: '#C62828',
-      fontWeight: '700',
     },
 
     /*
