@@ -3,6 +3,26 @@ import { supabase } from './supabase';
 export const BIN_HEIGHT_CM = 40;
 export const FULL_PERCENT = 85;
 
+// =====================================================
+// HC-SR04 CALIBRATION
+// =====================================================
+//
+// The HC-SR04 is mounted above the trash compartment.
+//
+// EMPTY_DISTANCE_CM:
+// Distance measured by the sensor when the bin is empty.
+//
+// FULL_DISTANCE_CM:
+// Distance from the sensor to the desired "100%" fill level.
+//
+// IMPORTANT:
+// These values should match your actual physical measurements.
+// The Arduino/ESP32 code does NOT need to be changed.
+// The conversion is done here in the app.
+//
+const EMPTY_DISTANCE_CM = 28.5;
+const FULL_DISTANCE_CM = 4;
+
 export type Reading = {
   id: string;
   created_at: string;
@@ -139,18 +159,71 @@ function manilaDateKey(iso: string): string {
   ).format(date);
 }
 
+// =====================================================
+// CALCULATE FILL PERCENTAGE
+// =====================================================
+//
+// Converts the HC-SR04 distance into a fill percentage.
+//
+// Example with the current calibration:
+//
+// 29.5 cm or farther = 0%
+// 4 cm or closer     = 100%
+//
+// Anything between those values is mapped linearly.
+//
+function calculateFillPercent(
+  distanceCm: number | null
+): number {
+  if (
+    distanceCm === null ||
+    !Number.isFinite(distanceCm)
+  ) {
+    return 0;
+  }
+
+  // Empty or beyond the empty calibration point.
+  if (
+    distanceCm >= EMPTY_DISTANCE_CM
+  ) {
+    return 0;
+  }
+
+  // At or beyond the full calibration point.
+  if (
+    distanceCm <= FULL_DISTANCE_CM
+  ) {
+    return 100;
+  }
+
+  const percent =
+    (
+      (EMPTY_DISTANCE_CM - distanceCm) /
+      (EMPTY_DISTANCE_CM - FULL_DISTANCE_CM)
+    ) * 100;
+
+  return Math.round(
+    Math.max(
+      0,
+      Math.min(100, percent)
+    )
+  );
+}
+
 /*
  * =====================================================
  * NORMALIZE READING
  * =====================================================
  */
-
 function normalizeReading(
   row: Record<string, unknown>
 ): Reading | null {
-  const fill = asNumber(
-    row.fill_percent
-  );
+
+  const distanceCm =
+    asNumber(row.distance_cm);
+
+  const storedFill =
+    asNumber(row.fill_percent);
 
   const createdAt =
     typeof row.created_at === 'string'
@@ -158,11 +231,39 @@ function normalizeReading(
       : '';
 
   if (
-    fill === null ||
-    !createdAt
+    !createdAt ||
+    (
+      distanceCm === null &&
+      storedFill === null
+    )
   ) {
     return null;
   }
+
+  // Use the HC-SR04 distance as the source of truth.
+  //
+  // This means the app no longer depends on the
+  // Arduino/ESP32's old fill percentage calculation.
+  const fillPercent =
+    distanceCm !== null
+      ? calculateFillPercent(distanceCm)
+      : Math.round(
+          Math.max(
+            0,
+            Math.min(
+              100,
+              storedFill ?? 0
+            )
+          )
+        );
+
+  // Determine FULL from the recalculated percentage.
+  //
+  // This is important because using the old database
+  // is_full value could still cause the app to say FULL
+  // even after the percentage has been recalculated.
+  const isFull =
+    fillPercent >= FULL_PERCENT;
 
   return {
     id: String(
@@ -177,12 +278,13 @@ function normalizeReading(
         : 'trash-bin',
 
     distance_cm:
-      asNumber(row.distance_cm),
+      distanceCm,
 
-    fill_percent: fill,
+    fill_percent:
+      fillPercent,
 
     is_full:
-      asBoolean(row.is_full) === true,
+      isFull,
   };
 }
 
@@ -191,10 +293,10 @@ function normalizeReading(
  * NORMALIZE CAMERA
  * =====================================================
  */
-
 function normalizeCamera(
   row: Record<string, unknown>
 ): CameraCheck | null {
+
   const createdAt =
     typeof row.created_at === 'string'
       ? row.created_at
@@ -236,13 +338,12 @@ function normalizeCamera(
  * NORMALIZE BIN
  * =====================================================
  */
-
 function normalizeBin(
   row: Record<string, unknown>
 ): BinInfo | null {
-  const binId = asNumber(
-    row.bin_id
-  );
+
+  const binId =
+    asNumber(row.bin_id);
 
   if (binId === null) {
     return null;
@@ -273,12 +374,12 @@ function normalizeBin(
  * PRESENT MONITOR
  * =====================================================
  */
-
 export function presentMonitor(
   readingsNewestFirst: Reading[],
   camerasNewestFirst: CameraCheck[],
   bin: BinInfo | null
 ): MonitorState {
+
   const today =
     manilaDateKey(
       new Date().toISOString()
@@ -301,6 +402,7 @@ export function presentMonitor(
       ...readingsNewestFirst,
     ].reverse()
   ) {
+
     if (
       manilaDateKey(
         row.created_at
@@ -340,6 +442,7 @@ export function presentMonitor(
       ...camerasNewestFirst,
     ].reverse()
   ) {
+
     if (
       row.is_full === true &&
       !cameraWasFull
@@ -365,8 +468,8 @@ export function presentMonitor(
       left.at < right.at
         ? 1
         : left.at > right.at
-          ? -1
-          : 0
+        ? -1
+        : 0
   );
 
   const fullToday =
@@ -416,38 +519,41 @@ export function presentMonitor(
 
   let banner:
     MonitorState['banner'] =
-      null;
+    null;
 
   if (confirmed) {
+
     banner = {
       level: 'full',
-
       text:
         'The trashcan is full. The camera confirms what the sensor measured.',
     };
+
   } else if (
     sensorFull &&
     cameraFull === false
   ) {
+
     banner = {
       level: 'check',
-
       text:
         'The sensor says the trashcan is full. The camera does not confirm it.',
     };
+
   } else if (sensorFull) {
+
     banner = {
       level: 'full',
-
       text:
         'The sensor says the trashcan is full. Waiting for the camera to confirm.',
     };
+
   } else if (
     cameraFull === true
   ) {
+
     banner = {
       level: 'check',
-
       text:
         'The camera shows a full trashcan. The distance sensor has not reported full.',
     };
@@ -488,41 +594,44 @@ export function presentMonitor(
    */
 
   return {
+
     bin,
 
-    sensor: sensor
-      ? {
-          distance_cm:
-            sensor.distance_cm,
+    sensor:
+      sensor
+        ? {
+            distance_cm:
+              sensor.distance_cm,
 
-          fill_percent:
-            sensor.fill_percent,
+            fill_percent:
+              sensor.fill_percent,
 
-          is_full:
-            sensor.is_full,
+            is_full:
+              sensor.is_full,
 
-          updated_at:
-            sensor.created_at,
-        }
-      : null,
+            updated_at:
+              sensor.created_at,
+          }
+        : null,
 
-    camera: camera
-      ? {
-          is_full:
-            camera.is_full,
+    camera:
+      camera
+        ? {
+            is_full:
+              camera.is_full,
 
-          image:
-            camera.image_url &&
-            camera.image_url.startsWith(
-              'http'
-            )
-              ? camera.image_url
-              : null,
+            image:
+              camera.image_url &&
+              camera.image_url.startsWith(
+                'http'
+              )
+                ? camera.image_url
+                : null,
 
-          updated_at:
-            camera.created_at,
-        }
-      : null,
+            updated_at:
+              camera.created_at,
+          }
+        : null,
 
     history,
 
@@ -530,6 +639,7 @@ export function presentMonitor(
       alerts.slice(0, 12),
 
     analytics: {
+
       readings_today:
         todayFills.length,
 
@@ -575,13 +685,14 @@ export function presentMonitor(
  * FETCH MONITOR STATE
  * =====================================================
  */
-
 export async function fetchMonitorState(): Promise<MonitorState> {
+
   const [
     readingsResult,
     cameraResult,
     binResult,
   ] = await Promise.all([
+
     /*
      * HC-SR04 READINGS
      */
@@ -669,8 +780,10 @@ export async function fetchMonitorState(): Promise<MonitorState> {
 
   const readings =
     (
-      (readingsResult.data ??
-        []) as Record<
+      (
+        readingsResult.data ??
+        []
+      ) as Record<
         string,
         unknown
       >[]
@@ -687,8 +800,10 @@ export async function fetchMonitorState(): Promise<MonitorState> {
 
   const cameras =
     (
-      (cameraResult.data ??
-        []) as Record<
+      (
+        cameraResult.data ??
+        []
+      ) as Record<
         string,
         unknown
       >[]
