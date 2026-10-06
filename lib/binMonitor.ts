@@ -20,7 +20,7 @@ export const FULL_PERCENT = 85;
 // The Arduino/ESP32 code does NOT need to be changed.
 // The conversion is done here in the app.
 //
-const EMPTY_DISTANCE_CM = 28.5;
+const EMPTY_DISTANCE_CM = 27.9;
 const FULL_DISTANCE_CM = 4;
 
 export type Reading = {
